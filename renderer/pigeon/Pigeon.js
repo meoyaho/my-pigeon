@@ -29,13 +29,17 @@ class Pigeon {
     this.stateElapsedMs += deltaMs;
     this.weirdBehaviorTimerMs += deltaMs;
 
+    // Handle WEIRD_BEHAVIOR exit (highest priority to prevent state layering).
     if (this.state === STATES.WEIRD_BEHAVIOR) {
       if (this.stateElapsedMs >= this.opts.weirdBehaviorDurationMs) {
+        this.currentWeirdBehavior = null; // Clear stale behavior name
+        this.weirdBehaviorTimerMs = 0; // Reset timer for next interval
         this._enterState(STATES.IDLE);
       }
       return;
     }
 
+    // Interrupt any state to trigger WEIRD_BEHAVIOR on interval (prevents task accumulation).
     if (this.weirdBehaviorTimerMs >= this.opts.weirdBehaviorIntervalMs &&
         (this.state === STATES.IDLE || this.state === STATES.WALKING)) {
       this.currentWeirdBehavior = pickRandomWeirdBehavior(this.opts.rng);
@@ -44,10 +48,15 @@ class Pigeon {
       return;
     }
 
+    // Normal state transitions: IDLE ↔ WALKING.
+    // NOTE: every _enterState() call in this function must be immediately followed by return.
+    // This prevents multiple state transitions in a single tick when stateElapsedMs is freshly reset.
     if (this.state === STATES.IDLE && this.stateElapsedMs >= this.opts.idleDurationMs) {
       this._enterState(STATES.WALKING);
+      return;
     } else if (this.state === STATES.WALKING && this.stateElapsedMs >= this.opts.walkDurationMs) {
       this._enterState(STATES.IDLE);
+      return;
     }
   }
 
