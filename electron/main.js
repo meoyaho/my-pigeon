@@ -1,9 +1,11 @@
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, dialog } = require('electron');
+const fs = require('fs');
 const { createOverlayWindow, setClickThroughExceptRegion } = require('./overlayWindow');
 const { createTray } = require('./tray');
 const { IPC } = require('./ipcChannels');
 const { startActiveWindowWatcher } = require('./activeWindowWatcher');
 const { startWeatherPolling } = require('./weather');
+const { openCameraWindow } = require('./cameraWindow');
 
 let overlayWin;
 let tray;
@@ -34,9 +36,20 @@ app.whenReady().then(() => {
 
   ipcMain.once('commute-out-animation-done', () => app.quit());
 
+  ipcMain.handle('save-photo', async (_event, dataUrl) => {
+    const { filePath } = await dialog.showSaveDialog({
+      defaultPath: 'pigeon-photo.png',
+      filters: [{ name: 'PNG Image', extensions: ['png'] }],
+    });
+    if (!filePath) return { saved: false };
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+    fs.writeFileSync(filePath, base64, 'base64');
+    return { saved: true, filePath };
+  });
+
   tray = createTray(
     () => overlayWin.webContents.send(IPC.FEED_TRIGGERED),
-    () => { /* wired in Task 12 */ },
+    () => openCameraWindow(),
     () => {
       if (commuteOutTriggered) return;
       commuteOutTriggered = true;
