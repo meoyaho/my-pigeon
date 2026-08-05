@@ -4,9 +4,11 @@ const DEFAULTS = {
   idleDurationMs: 3000,
   weirdBehaviorIntervalMs: 15000,
   weirdBehaviorDurationMs: 2500,
-  walkDurationMs: 2000,
+  walkDurationMs: 2000, // fallback-only: used when bounds are unknown, so no corner target exists
+  walkSpeed: 0.06, // px/ms — real corner-to-corner walking pace once bounds are known
+  cornerArrivalThreshold: 80, // px — how close to a corner counts as "already there" after a drag
   rng: Math.random,
-  bounds: null, // { width, height } — no clamping by default (kept for existing tests)
+  bounds: null, // { width, height } — no clamping/corner-seeking without this (kept for existing tests)
   boundsMargin: 160, // fallback half-extent used only before a sprite is attached
 };
 
@@ -38,26 +40,6 @@ class Pigeon {
     this.stateElapsedMs += deltaMs;
     this.weirdBehaviorTimerMs += deltaMs;
 
-    // Handle COMMUTE_IN/COMMUTE_OUT flight (triggered externally via flyTo()).
-    // Linearly interpolates x/y from where flyTo() was called to the target
-    // over flightDurationMs; intentionally does NOT clampToBounds(), since
-    // fly-in/fly-out targets are deliberately off-screen.
-    if (this.state === STATES.COMMUTE_IN || this.state === STATES.COMMUTE_OUT) {
-      const t = Math.min(1, this.stateElapsedMs / this.flightDurationMs);
-      this.x = this.flightFrom.x + (this.flightTo.x - this.flightFrom.x) * t;
-      this.y = this.flightFrom.y + (this.flightTo.y - this.flightFrom.y) * t;
-      if (t >= 1) {
-        const onComplete = this.flightOnComplete;
-        this.flightOnComplete = null; // fire once
-        const arriveState = this.flightArriveState;
-        if (arriveState) {
-          this._enterState(arriveState);
-        }
-        if (onComplete) onComplete();
-      }
-      return;
-    }
-
     // Handle SCATTERING (highest priority — pre-empts everything else).
     if (this.state === STATES.SCATTERING) {
       const speed = 0.4; // px/ms placeholder movement speed
@@ -88,7 +70,9 @@ class Pigeon {
       return;
     }
 
-    // Interrupt any state to trigger WEIRD_BEHAVIOR on interval (prevents task accumulation).
+    // Interrupt IDLE or an in-progress corner-walk to trigger WEIRD_BEHAVIOR on
+    // interval. Checked before the flight/movement branch below so a weird
+    // behavior can genuinely interrupt a walk in progress, not just idling.
     if (this.weirdBehaviorTimerMs >= this.opts.weirdBehaviorIntervalMs &&
         (this.state === STATES.IDLE || this.state === STATES.WALKING)) {
       this.currentWeirdBehavior = pickRandomWeirdBehavior(this.opts.rng);
@@ -97,13 +81,51 @@ class Pigeon {
       return;
     }
 
-    // Normal state transitions: IDLE ↔ WALKING.
+    // Handle COMMUTE_IN/COMMUTE_OUT/WALKING flight (triggered via flyTo()).
+    // Linearly interpolates x/y from where flyTo() was called to the target
+    // over flightDurationMs; intentionally does NOT clampToBounds(), since
+    // fly-in/fly-out targets are deliberately off-screen (WALKING's corner
+    // targets are always already in-bounds, so this is safe for it too — any
+    // point between two points inside a rectangle is itself inside it).
+    // Guarded on this.flightTo so a WALKING entered via the bounds-unknown
+    // fallback below (no flyTo call, so no flight data) isn't misread as an
+    // in-progress flight.
+    if (this.flightTo &&
+        (this.state === STATES.COMMUTE_IN || this.state === STATES.COMMUTE_OUT || this.state === STATES.WALKING)) {
+      const t = Math.min(1, this.stateElapsedMs / this.flightDurationMs);
+      this.x = this.flightFrom.x + (this.flightTo.x - this.flightFrom.x) * t;
+      this.y = this.flightFrom.y + (this.flightTo.y - this.flightFrom.y) * t;
+      if (t >= 1) {
+        const onComplete = this.flightOnComplete;
+        this.flightOnComplete = null; // fire once
+        const arriveState = this.flightArriveState;
+        if (arriveState) {
+          this._enterState(arriveState);
+        }
+        if (onComplete) onComplete();
+      }
+      return;
+    }
+
+    // Normal state transitions: IDLE -> WALKING.
     // NOTE: every _enterState() call in this function must be immediately followed by return.
     // This prevents multiple state transitions in a single tick when stateElapsedMs is freshly reset.
     if (this.state === STATES.IDLE && this.stateElapsedMs >= this.opts.idleDurationMs) {
-      this._enterState(STATES.WALKING);
+      const target = this._pickWalkTarget();
+      if (target) {
+        // Real pigeon-like corner-to-corner walk: flyTo() also handles the
+        // WALKING -> IDLE arrival and the idle/walk sprite swap automatically.
+        const distance = Math.hypot(target.x - this.x, target.y - this.y);
+        const durationMs = Math.max(1, distance / this.opts.walkSpeed);
+        this.flyTo(target, durationMs, { state: STATES.WALKING, arriveState: STATES.IDLE });
+      } else {
+        // No bounds known (e.g. some unit tests construct a Pigeon without
+        // them) — no corner to walk toward, so fall back to a stationary,
+        // fixed-duration WALKING state for backward compatibility.
+        this._enterState(STATES.WALKING);
+      }
       return;
-    } else if (this.state === STATES.WALKING && this.stateElapsedMs >= this.opts.walkDurationMs) {
+    } else if (this.state === STATES.WALKING && !this.flightTo && this.stateElapsedMs >= this.opts.walkDurationMs) {
       this._enterState(STATES.IDLE);
       return;
     }
@@ -150,30 +172,90 @@ class Pigeon {
     if (animName) this._setSpriteAnimation(animName);
   }
 
+  // x/y is the sprite's CENTER (attachSprite sets anchor to 0.5/0.5), so the
+  // safe margin from any edge must be half the sprite's actual width/height —
+  // otherwise only the anchor point stays on screen while the rest of a large
+  // photo cutout can still hang off the edge. Falls back to opts.boundsMargin
+  // before a sprite is attached (e.g. a freshly-spawned temporary pigeon).
+  _getMargins() {
+    return {
+      x: this.sprite ? this.sprite.width / 2 : this.opts.boundsMargin,
+      y: this.sprite ? this.sprite.height / 2 : this.opts.boundsMargin,
+    };
+  }
+
   // Keeps x/y within opts.bounds (if set), so movement never drifts the
   // pigeon off the visible screen. No-ops if bounds weren't provided —
   // used by SCATTERING's own movement and by any external code (Flock,
   // dragHandler) that sets x/y directly.
-  //
-  // x/y is the sprite's CENTER (attachSprite sets anchor to 0.5/0.5), so the
-  // margin must be half the sprite's actual width/height — otherwise only the
-  // anchor point stays on screen while the rest of a large photo cutout can
-  // still hang off the edge. Falls back to opts.boundsMargin before a sprite
-  // is attached (e.g. a freshly-spawned temporary pigeon).
   clampToBounds() {
     const bounds = this.opts.bounds;
     if (!bounds) return;
-    const marginX = this.sprite ? this.sprite.width / 2 : this.opts.boundsMargin;
-    const marginY = this.sprite ? this.sprite.height / 2 : this.opts.boundsMargin;
-    this.x = Math.max(marginX, Math.min(bounds.width - marginX, this.x));
-    this.y = Math.max(marginY, Math.min(bounds.height - marginY, this.y));
+    const margin = this._getMargins();
+    this.x = Math.max(margin.x, Math.min(bounds.width - margin.x, this.x));
+    this.y = Math.max(margin.y, Math.min(bounds.height - margin.y, this.y));
+  }
+
+  // The 4 screen corners, inset by the same margin clampToBounds() uses, so a
+  // pigeon "at a corner" is fully on-screen there, not clipped. Returns null
+  // when bounds aren't known (nothing to compute corners against).
+  _getCorners() {
+    const bounds = this.opts.bounds;
+    if (!bounds) return null;
+    const margin = this._getMargins();
+    return [
+      { x: margin.x, y: margin.y }, // top-left
+      { x: bounds.width - margin.x, y: margin.y }, // top-right
+      { x: margin.x, y: bounds.height - margin.y }, // bottom-left
+      { x: bounds.width - margin.x, y: bounds.height - margin.y }, // bottom-right
+    ];
+  }
+
+  _nearestCornerIndex(corners, point) {
+    let bestIndex = 0;
+    let bestDistSq = Infinity;
+    corners.forEach((corner, index) => {
+      const distSq = (corner.x - point.x) ** 2 + (corner.y - point.y) ** 2;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        bestIndex = index;
+      }
+    });
+    return bestIndex;
+  }
+
+  // Picks a random corner OTHER than the one closest to the pigeon's current
+  // position, so a "walk" is always an actual trip across the screen rather
+  // than a near-zero-distance walk to the corner it's already standing at.
+  // Returns null when bounds aren't known.
+  _pickWalkTarget() {
+    const corners = this._getCorners();
+    if (!corners) return null;
+    const nearestIndex = this._nearestCornerIndex(corners, { x: this.x, y: this.y });
+    const choices = corners.filter((_, index) => index !== nearestIndex);
+    const pickIndex = Math.min(Math.floor(this.opts.rng() * choices.length), choices.length - 1);
+    return choices[pickIndex];
   }
 
   startDrag() {
     this._enterState(STATES.DRAGGED);
   }
 
+  // Real pigeons don't linger wherever they're set down — if the drop point
+  // isn't already close to a corner, immediately start walking to the
+  // nearest one instead of just idling in the middle of the screen.
   endDrag() {
+    const corners = this._getCorners();
+    if (corners) {
+      const nearestIndex = this._nearestCornerIndex(corners, { x: this.x, y: this.y });
+      const nearest = corners[nearestIndex];
+      const distance = Math.hypot(nearest.x - this.x, nearest.y - this.y);
+      if (distance > this.opts.cornerArrivalThreshold) {
+        const durationMs = Math.max(1, distance / this.opts.walkSpeed);
+        this.flyTo(nearest, durationMs, { state: STATES.WALKING, arriveState: STATES.IDLE });
+        return;
+      }
+    }
     this._enterState(STATES.IDLE);
   }
 

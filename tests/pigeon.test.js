@@ -203,3 +203,55 @@ test('a temporary pigeon spawned already in EATING shows the eat animation from 
   );
   expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.eat);
 });
+
+test('random walk targets a corner other than the one the pigeon is already nearest to', () => {
+  const p = makeAttachedPigeon(50, 50, { idleDurationMs: 100, walkSpeed: 1000 });
+  // (50,50) is nearest the top-left corner (margin 50,50 with the 100x100 mock sprite).
+  p.update(150); // crosses idleDurationMs, triggers the corner-walk
+  expect(p.getState()).toBe(STATES.WALKING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.walk);
+  // With walkSpeed this fast, one more tick should essentially complete the walk.
+  p.update(10000);
+  expect(p.getState()).toBe(STATES.IDLE);
+  // Must have actually moved away from the top-left corner it started at.
+  expect(Math.hypot(p.x - 50, p.y - 50)).toBeGreaterThan(200);
+  // And must have landed near one of the OTHER three corners, not back at start.
+  const corners = [[50, 50], [750, 50], [50, 550], [750, 550]];
+  const distances = corners.map(([cx, cy]) => Math.hypot(p.x - cx, p.y - cy));
+  expect(Math.min(...distances)).toBeLessThan(5);
+  expect(distances[0]).toBeGreaterThan(5); // did not just walk back to top-left
+});
+
+test('a bounds-less pigeon falls back to the old stationary, fixed-duration WALKING', () => {
+  const p = new Pigeon(null, { x: 0, y: 0 }, { idleDurationMs: 100, walkDurationMs: 200, rng: () => 0.9 });
+  p.update(150);
+  expect(p.getState()).toBe(STATES.WALKING);
+  const xBeforeWalking = p.x;
+  p.update(50); // still short of walkDurationMs — must not move (no corner target exists)
+  expect(p.x).toBe(xBeforeWalking);
+  expect(p.getState()).toBe(STATES.WALKING);
+  p.update(200); // now past walkDurationMs
+  expect(p.getState()).toBe(STATES.IDLE);
+});
+
+test('endDrag near a corner just goes IDLE, no walk', () => {
+  const p = makeAttachedPigeon(50, 50); // sitting almost exactly on the top-left corner
+  p.startDrag();
+  p.endDrag();
+  expect(p.getState()).toBe(STATES.IDLE);
+  expect(p.x).toBe(50);
+  expect(p.y).toBe(50);
+});
+
+test('endDrag away from any corner walks to the nearest one instead of idling in place', () => {
+  const p = makeAttachedPigeon(400, 300, { walkSpeed: 1000 }); // dead center of an 800x600 screen
+  p.startDrag();
+  p.endDrag();
+  expect(p.getState()).toBe(STATES.WALKING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.walk);
+  p.update(10000); // fast walkSpeed — should arrive well within this
+  expect(p.getState()).toBe(STATES.IDLE);
+  const corners = [[50, 50], [750, 50], [50, 550], [750, 550]];
+  const distances = corners.map(([cx, cy]) => Math.hypot(p.x - cx, p.y - cy));
+  expect(Math.min(...distances)).toBeLessThan(5); // landed on some corner
+});
