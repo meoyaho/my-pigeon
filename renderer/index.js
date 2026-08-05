@@ -1,6 +1,9 @@
 const PIXI = require('pixi.js');
 const { buildPlaceholderSpritesheet } = require('./pigeon/spriteLoader');
 const { Pigeon } = require('./pigeon/Pigeon');
+const { showMessageBubble } = require('./pigeon/messageBubble');
+const { pickCommuteInPhrase, pickCommuteOutPhrase } = require('./pigeon/phrases');
+const { IPC } = require('../electron/ipcChannels');
 
 // pixi.js 8.x moved Application setup to an async `init()` call; the constructor
 // no longer accepts renderer options synchronously (that path is deprecated and,
@@ -34,6 +37,25 @@ function getMainPigeon() {
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
     mainPigeon.update(deltaMs);
+  });
+
+  window.pigeonBridge.on(IPC.COMMUTE_IN, () => {
+    showMessageBubble(PIXI, app.stage, {
+      x: mainPigeon.sprite.x,
+      y: mainPigeon.sprite.y,
+      text: pickCommuteInPhrase(),
+    });
+  });
+
+  window.pigeonBridge.on(IPC.COMMUTE_OUT, () => {
+    showMessageBubble(PIXI, app.stage, {
+      x: mainPigeon.sprite.x,
+      y: mainPigeon.sprite.y,
+      text: pickCommuteOutPhrase(),
+    });
+    setTimeout(() => {
+      window.pigeonBridge.send('commute-out-animation-done');
+    }, 3200); // let the bubble show before quitting
   });
 })();
 
