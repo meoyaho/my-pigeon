@@ -29,6 +29,11 @@ class Pigeon {
     this.stateElapsedMs += deltaMs;
     this.weirdBehaviorTimerMs += deltaMs;
 
+    // Handle DRAGGED (highest priority — position is driven externally by dragHandler).
+    if (this.state === STATES.DRAGGED) {
+      return; // position is driven externally by dragHandler while dragged
+    }
+
     // Handle SCATTERING (highest priority — pre-empts everything else).
     if (this.state === STATES.SCATTERING) {
       const speed = 0.4; // px/ms placeholder movement speed
@@ -74,6 +79,14 @@ class Pigeon {
   _enterState(newState) {
     this.state = newState;
     this.stateElapsedMs = 0;
+  }
+
+  startDrag() {
+    this._enterState(STATES.DRAGGED);
+  }
+
+  endDrag() {
+    this._enterState(STATES.IDLE);
   }
 
   scatterAwayFrom(point) {

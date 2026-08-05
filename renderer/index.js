@@ -5,6 +5,7 @@ const { showMessageBubble } = require('./pigeon/messageBubble');
 const { pickCommuteInPhrase, pickCommuteOutPhrase } = require('./pigeon/phrases');
 const { IPC } = require('../electron/ipcChannels');
 const { MouseVelocityTracker, shouldScatter } = require('./interactions/mouseTracker');
+const { attachDragHandlers } = require('./interactions/dragHandler');
 
 // pixi.js 8.x moved Application setup to an async `init()` call; the constructor
 // no longer accepts renderer options synchronously (that path is deprecated and,
@@ -34,6 +35,10 @@ function getMainPigeon() {
 
   mainPigeon = new Pigeon(spritesheet, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
   mainPigeon.attachSprite(PIXI, app.stage);
+
+  attachDragHandlers(mainPigeon);
+  mainPigeon.sprite.on('pointerover', () => window.pigeonBridge.send('cursor-over-hitbox', true));
+  mainPigeon.sprite.on('pointerout', () => window.pigeonBridge.send('cursor-over-hitbox', false));
 
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
