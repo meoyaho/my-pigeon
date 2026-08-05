@@ -19,8 +19,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "active-win": "9.0.0",
     "electron": "30.5.1",
+    "get-windows": "9.3.0",
     "pixi.js": "8.19.0"
   },
   "devDependencies": {
