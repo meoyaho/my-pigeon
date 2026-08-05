@@ -23,7 +23,16 @@ function loadActiveWindow() {
 }
 
 function startActiveWindowWatcher(onChange, pollMs = 1500) {
-  let lastTitle = null;
+  // Comparing on win.title looked right at first but overfired: a window's
+  // title text changes for reasons that have nothing to do with focus (a
+  // terminal's busy-spinner glyph, a page's loading-progress text, an
+  // unsaved-changes dot), so just typing or moving the mouse inside the
+  // SAME window could flip the title and trigger Startled with no real
+  // focus change. win.id identifies the window itself and only changes
+  // when the frontmost window actually changes — switching apps or
+  // switching windows within an app — which is what Startled should key
+  // off of.
+  let lastWindowId = null;
   let stopped = false;
 
   async function poll() {
@@ -31,10 +40,10 @@ function startActiveWindowWatcher(onChange, pollMs = 1500) {
     try {
       const activeWindow = await loadActiveWindow();
       const win = await activeWindow();
-      const title = win ? win.title : null;
-      if (title !== null && title !== lastTitle) {
-        if (lastTitle !== null) onChange(); // don't fire on the very first read
-        lastTitle = title;
+      const windowId = win ? win.id : null;
+      if (windowId !== null && windowId !== lastWindowId) {
+        if (lastWindowId !== null) onChange(); // don't fire on the very first read
+        lastWindowId = windowId;
       }
     } catch (err) {
       // Permission not granted or unsupported platform: silently skip per spec's

@@ -59,10 +59,18 @@ async function buildPlaceholderSpritesheet(PIXI) {
   return { frames };
 }
 
+// The food icon isn't part of the pigeon's animation spritesheet (no
+// per-state frames), just one standalone image shown at the cursor while
+// placing feed and then at the drop point.
+async function loadFoodTexture(PIXI) {
+  return PIXI.Assets.load(path.join(SPRITES_DIR, 'food.png'));
+}
+
 module.exports = {
   ANIMATION_FRAME_COUNTS,
   getAnimationNames,
   buildPlaceholderSpritesheet,
   FRAME_SEQUENCE_OVERRIDES,
   applyFrameSequence,
+  loadFoodTexture,
 };

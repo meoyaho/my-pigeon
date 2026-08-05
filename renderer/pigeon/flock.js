@@ -4,7 +4,6 @@ const { STATES } = require('./states');
 const MAX_TEMPORARY_PIGEONS = 8;
 const DEFAULTS = {
   spawnStaggerMs: 150, // how soon each pigeon STARTS its arrival, not how fast it flies
-  dispersalAfterMs: 6000, // how long the flock stays eating before dispersing
   rng: Math.random,
 };
 
@@ -17,7 +16,6 @@ class Flock {
     this.foodPoint = null;
     this.spawnTimerMs = 0;
     this.spawnedCount = 0;
-    this.dispersalTimerMs = 0;
   }
 
   startFeeding(point) {
@@ -32,7 +30,6 @@ class Flock {
     this.foodPoint = clampPointToBounds(point, bounds, margin);
     this.spawnTimerMs = 0;
     this.spawnedCount = 0;
-    this.dispersalTimerMs = 0;
     // Fly there for real (flyIn animation, visible travel) instead of
     // teleporting instantly — works regardless of bounds since it's just
     // interpolating between the pigeon's current position and the food
@@ -99,15 +96,9 @@ class Flock {
         this.temporaryPigeons.push(pigeon);
       }
     }
-
-    if (this.spawnedCount >= MAX_TEMPORARY_PIGEONS) {
-      this.dispersalTimerMs += deltaMs;
-      if (this.dispersalTimerMs >= this.opts.dispersalAfterMs) {
-        this.temporaryPigeons = [];
-        this.feeding = false;
-        this.mainPigeon._enterState(STATES.IDLE);
-      }
-    }
+    // No auto-dispersal timer: the gathered flock stays put and eating
+    // indefinitely until the user actually shoos them away (disperseAll()),
+    // not on a clock.
   }
 
   // Triggered by a single 훠이훠이 while a flock is gathered: every temporary
@@ -118,7 +109,7 @@ class Flock {
   // mouse-wave gesture don't restart an already-departing pigeon.
   disperseAll() {
     if (!this.feeding) return;
-    this.feeding = false; // stop staggered spawning and the auto-dispersal timer
+    this.feeding = false; // stop staggered spawning
     const bounds = this.mainPigeon.opts.bounds;
     for (const pigeon of this.temporaryPigeons) {
       if (pigeon.getState() === STATES.FLEEING) continue;

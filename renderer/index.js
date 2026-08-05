@@ -1,5 +1,5 @@
 const PIXI = require('pixi.js');
-const { buildPlaceholderSpritesheet } = require('./pigeon/spriteLoader');
+const { buildPlaceholderSpritesheet, loadFoodTexture } = require('./pigeon/spriteLoader');
 const { Pigeon } = require('./pigeon/Pigeon');
 const { STATES } = require('./pigeon/states');
 const { showMessageBubble } = require('./pigeon/messageBubble');
@@ -36,6 +36,18 @@ function getMainPigeon() {
 
   const spritesheet = await buildPlaceholderSpritesheet(PIXI);
 
+  // Cursor-follow food icon: shown while the user is picking a feed spot
+  // (replaces the OS cursor), then stays put at the clicked point until the
+  // flock disperses.
+  const FOOD_ICON_SIZE = 28;
+  const foodTexture = await loadFoodTexture(PIXI);
+  const foodSprite = new PIXI.Sprite(foodTexture);
+  foodSprite.anchor.set(0.5, 0.5);
+  foodSprite.width = FOOD_ICON_SIZE;
+  foodSprite.height = FOOD_ICON_SIZE * (foodTexture.height / foodTexture.width);
+  foodSprite.visible = false;
+  app.stage.addChild(foodSprite);
+
   // Spawn off-screen at the upper-left corner so COMMUTE_IN can fly it in to
   // center — matches where the pigeon will actually start before fly-in.
   const spawnX = -150;
@@ -67,14 +79,25 @@ function getMainPigeon() {
 
   window.pigeonBridge.on(IPC.FEED_TRIGGERED, () => {
     feedMode.start();
-    document.body.style.cursor = 'crosshair';
+    // Hide the OS cursor in favor of the food icon following the pointer.
+    document.body.style.cursor = 'none';
+    foodSprite.visible = true;
     window.pigeonBridge.send('feed-mode-active', true); // main makes whole window clickable
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (feedMode.isActive()) {
+      foodSprite.x = e.clientX;
+      foodSprite.y = e.clientY;
+    }
   });
 
   window.addEventListener('click', (e) => {
     const point = feedMode.handleClick({ x: e.clientX, y: e.clientY });
     if (point) {
       document.body.style.cursor = 'default';
+      foodSprite.x = point.x;
+      foodSprite.y = point.y;
       window.pigeonBridge.send('feed-mode-active', false);
       window.pigeonBridge.send(IPC.FEED_PLACED, point);
     }
@@ -97,10 +120,13 @@ function getMainPigeon() {
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
     feedMode.tick(deltaMs);
-    if (!feedMode.isActive() && document.body.style.cursor === 'crosshair') {
+    if (!feedMode.isActive() && document.body.style.cursor === 'none') {
       document.body.style.cursor = 'default';
       window.pigeonBridge.send('feed-mode-active', false);
     }
+    // Stays visible while the user is still positioning it, and again once
+    // placed until the flock finishes eating and disperses.
+    foodSprite.visible = feedMode.isActive() || flock.feeding;
     flock.update(deltaMs);
 
     // Sync sprite position from each pigeon's FSM-internal x/y — the FSM (e.g.

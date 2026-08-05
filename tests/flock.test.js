@@ -36,14 +36,15 @@ test('a second startFeeding call while feeding is active is a no-op', () => {
   expect(flock.getTemporaryPigeons().length).toBe(countAfterFirst);
 });
 
-test('temporary pigeons are removed after they finish dispersing', () => {
-  const flock = new Flock(makeMain(), { dispersalAfterMs: 500, spawnStaggerMs: 100 });
+test('the gathered flock stays fed indefinitely — no auto-dispersal timer', () => {
+  const flock = new Flock(makeMain(), { spawnStaggerMs: 100 });
   flock.startFeeding({ x: 0, y: 0 });
   for (let i = 0; i < 8; i++) flock.update(100);
   expect(flock.getTemporaryPigeons().length).toBe(8);
 
-  flock.update(600); // past dispersalAfterMs
-  expect(flock.getTemporaryPigeons().length).toBe(0);
+  flock.update(60000); // a long time later — only disperseAll() should ever clear them
+  expect(flock.getTemporaryPigeons().length).toBe(8);
+  expect(flock.feeding).toBe(true);
 });
 
 function makeMainWithBounds(options = {}) {
