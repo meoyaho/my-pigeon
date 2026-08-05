@@ -1,5 +1,6 @@
 const { app, ipcMain, dialog } = require('electron');
 const fs = require('fs');
+const path = require('path');
 const { createOverlayWindow, setClickThroughExceptRegion } = require('./overlayWindow');
 const { createTray } = require('./tray');
 const { IPC } = require('./ipcChannels');
@@ -7,12 +8,37 @@ const { startActiveWindowWatcher } = require('./activeWindowWatcher');
 const { startWeatherPolling } = require('./weather');
 const { openCameraWindow } = require('./cameraWindow');
 
+const APP_PROTOCOL = 'pigeonpet';
+
 let overlayWin;
 let tray;
 let commuteOutTriggered = false;
 let quitTimeout = null;
 let cursorOverHitbox = false;
 let feedModeActive = false;
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+function registerAppProtocol() {
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(APP_PROTOCOL, process.execPath, [
+      path.resolve(process.argv[1]),
+    ]);
+    return;
+  }
+
+  app.setAsDefaultProtocolClient(APP_PROTOCOL);
+}
+
+function bringOverlayForward() {
+  if (!overlayWin) return;
+  if (overlayWin.isMinimized()) overlayWin.restore();
+  overlayWin.show();
+}
 
 function updateClickThrough() {
   setClickThroughExceptRegion(overlayWin, cursorOverHitbox || feedModeActive);
@@ -26,63 +52,76 @@ function quitOnce() {
   app.quit();
 }
 
-app.whenReady().then(() => {
-  overlayWin = createOverlayWindow();
-
-  startActiveWindowWatcher(() => {
-    overlayWin.webContents.send(IPC.FOCUS_CHANGED);
+if (gotSingleInstanceLock) {
+  app.on('second-instance', () => {
+    bringOverlayForward();
   });
 
-  startWeatherPolling(({ condition }) => {
-    overlayWin.webContents.send(IPC.WEATHER_UPDATED, condition);
+  app.on('open-url', (event) => {
+    event.preventDefault();
+    bringOverlayForward();
   });
 
-  ipcMain.on('cursor-over-hitbox', (_event, isOverHitbox) => {
-    cursorOverHitbox = isOverHitbox;
-    updateClickThrough();
-  });
+  app.whenReady().then(() => {
+    registerAppProtocol();
 
-  ipcMain.on('feed-mode-active', (_event, isActive) => {
-    feedModeActive = isActive;
-    updateClickThrough();
-  });
+    overlayWin = createOverlayWindow();
 
-  ipcMain.on(IPC.FEED_PLACED, (_event, point) => {
-    overlayWin.webContents.send(IPC.FEED_PLACED, point);
-  });
-
-  overlayWin.webContents.once('did-finish-load', () => {
-    overlayWin.webContents.send(IPC.COMMUTE_IN);
-  });
-
-  ipcMain.once('commute-out-animation-done', () => quitOnce());
-
-  ipcMain.handle('save-photo', async (_event, dataUrl) => {
-    const { filePath } = await dialog.showSaveDialog({
-      defaultPath: 'pigeon-photo.png',
-      filters: [{ name: 'PNG Image', extensions: ['png'] }],
+    startActiveWindowWatcher(() => {
+      overlayWin.webContents.send(IPC.FOCUS_CHANGED);
     });
-    if (!filePath) return { saved: false };
-    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-    fs.writeFileSync(filePath, base64, 'base64');
-    return { saved: true, filePath };
-  });
 
-  tray = createTray(
-    () => overlayWin.webContents.send(IPC.FEED_TRIGGERED),
-    () => openCameraWindow(),
-    () => {
-      if (commuteOutTriggered) return;
-      commuteOutTriggered = true;
-      overlayWin.webContents.send(IPC.COMMUTE_OUT);
-      // Fallback: if the renderer never responds with commute-out-animation-done
-      // (crashed, hung, etc.), still quit within ~4s so the user always has a way
-      // to close the app via the tray. quitOnce() clears this timer if the normal
-      // path fires first, and app.quit() itself is safe to call more than once.
-      quitTimeout = setTimeout(() => quitOnce(), 4000);
-    }
-  );
-});
+    startWeatherPolling(({ condition }) => {
+      overlayWin.webContents.send(IPC.WEATHER_UPDATED, condition);
+    });
+
+    ipcMain.on('cursor-over-hitbox', (_event, isOverHitbox) => {
+      cursorOverHitbox = isOverHitbox;
+      updateClickThrough();
+    });
+
+    ipcMain.on('feed-mode-active', (_event, isActive) => {
+      feedModeActive = isActive;
+      updateClickThrough();
+    });
+
+    ipcMain.on(IPC.FEED_PLACED, (_event, point) => {
+      overlayWin.webContents.send(IPC.FEED_PLACED, point);
+    });
+
+    overlayWin.webContents.once('did-finish-load', () => {
+      overlayWin.webContents.send(IPC.COMMUTE_IN);
+    });
+
+    ipcMain.once('commute-out-animation-done', () => quitOnce());
+
+    ipcMain.handle('save-photo', async (_event, dataUrl) => {
+      const { filePath } = await dialog.showSaveDialog({
+        defaultPath: 'pigeon-photo.png',
+        filters: [{ name: 'PNG Image', extensions: ['png'] }],
+      });
+      if (!filePath) return { saved: false };
+      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+      fs.writeFileSync(filePath, base64, 'base64');
+      return { saved: true, filePath };
+    });
+
+    tray = createTray(
+      () => overlayWin.webContents.send(IPC.FEED_TRIGGERED),
+      () => openCameraWindow(),
+      () => {
+        if (commuteOutTriggered) return;
+        commuteOutTriggered = true;
+        overlayWin.webContents.send(IPC.COMMUTE_OUT);
+        // Fallback: if the renderer never responds with commute-out-animation-done
+        // (crashed, hung, etc.), still quit within ~4s so the user always has a way
+        // to close the app via the tray. quitOnce() clears this timer if the normal
+        // path fires first, and app.quit() itself is safe to call more than once.
+        quitTimeout = setTimeout(() => quitOnce(), 4000);
+      }
+    );
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

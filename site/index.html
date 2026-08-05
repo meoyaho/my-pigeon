@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Desktop Pigeon Pet 다운로드">
+    <title>Desktop Pigeon Pet</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="download-page">
+      <a
+        class="pigeon-download"
+        id="download-button"
+        href="https://github.com/meoyaho/my-pigeon/releases/latest"
+        download
+        aria-label="Desktop Pigeon Pet 다운로드"
+      >
+        <span class="text-frame" aria-hidden="true">
+          <span class="pigeon-text default-text">규.</span>
+          <span class="pigeon-text hover-text">나 안아.</span>
+        </span>
+        <span class="pigeon-frame" aria-hidden="true">
+          <img class="pigeon-image pigeon-default" src="./assets/pigeon-1.png" alt="">
+          <img class="pigeon-image pigeon-hover" src="./assets/pigeon-2.png" alt="">
+        </span>
+      </a>
+      <p class="download-status" id="download-status" aria-live="polite">
+        최신 설치 파일을 확인하는 중입니다.
+      </p>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

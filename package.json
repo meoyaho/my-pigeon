@@ -6,8 +6,13 @@
     "doc": "docs"
   },
   "scripts": {
+    "dev": "electron .",
+    "doctor": "node scripts/doctor.js",
     "start": "electron .",
     "test": "jest"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "keywords": [],
   "author": "",

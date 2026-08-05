@@ -1,0 +1,146 @@
+:root {
+  color-scheme: light;
+  --ink: #050505;
+  --paper: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.download-page {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: block;
+  overflow: hidden;
+}
+
+.pigeon-download {
+  --pigeon-width: min(90vw, 630px, 75dvh);
+  --pigeon-height: min(50vh, 50dvh, 58vw, 420px);
+  --half-pigeon-height: min(25vh, 25dvh, 29vw, 210px);
+  --text-height: clamp(4rem, 10vmin, 6rem);
+  --text-gap: clamp(6px, 2vmin, 18px);
+  position: absolute;
+  left: 50%;
+  top: calc(50% - var(--half-pigeon-height) - var(--text-gap) - var(--text-height));
+  width: min(90vw, 700px);
+  height: calc(var(--text-height) + var(--text-gap) + var(--pigeon-height));
+  transform: translateX(-50%);
+  display: block;
+  text-decoration: none;
+  color: var(--ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pigeon-download:focus-visible {
+  outline: 3px solid #111;
+  outline-offset: 16px;
+}
+
+.text-frame {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(100%, calc(100vw - 28px));
+  height: var(--text-height);
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+}
+
+.pigeon-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: "GungSeo", "궁서", "궁서체", "Batang", serif;
+  font-size: clamp(3rem, 8.4vmin, 5.2rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  transition: opacity 130ms ease;
+}
+
+.hover-text {
+  opacity: 0;
+}
+
+.pigeon-frame {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: var(--pigeon-width);
+  height: var(--pigeon-height);
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pigeon-image {
+  grid-area: 1 / 1;
+  width: auto;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+
+.pigeon-hover {
+  opacity: 0;
+  transform: translateY(-15px);
+}
+
+.pigeon-download:hover .default-text,
+.pigeon-download:focus-visible .default-text,
+.pigeon-download:hover .pigeon-default,
+.pigeon-download:focus-visible .pigeon-default {
+  opacity: 0;
+}
+
+.pigeon-download:hover .hover-text,
+.pigeon-download:focus-visible .hover-text,
+.pigeon-download:hover .pigeon-hover,
+.pigeon-download:focus-visible .pigeon-hover {
+  opacity: 1;
+}
+
+.download-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .pigeon-download {
+    width: calc(100vw - 28px);
+  }
+}
