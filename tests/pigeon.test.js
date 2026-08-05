@@ -422,3 +422,39 @@ test('walkToRandomCorner is a no-op when bounds are unknown', () => {
   expect(started).toBe(false);
   expect(p.getState()).toBe(STATES.IDLE);
 });
+
+test('WEIRD_BEHAVIOR triggered from IDLE keeps facing the same direction the pigeon was already facing', () => {
+  const p = makeAttachedPigeon(400, 300, {
+    idleDurationMs: 1_000_000,
+    weirdBehaviorIntervalMs: 100,
+    rng: () => 0, // picks 'flipOver'
+  });
+  p.flyTo({ x: 100, y: 300 }, 1000, { state: STATES.WALKING, arriveState: STATES.IDLE }); // walk left
+  p.update(1000); // arrives, back to IDLE, facing left (scale.x 1)
+  expect(p.sprite.scale.x).toBe(1);
+
+  p.update(100); // crosses weirdBehaviorIntervalMs, triggers flipOver
+  expect(p.getState()).toBe(STATES.WEIRD_BEHAVIOR);
+  expect(p.sprite.scale.x).toBe(1); // still facing left, matching the idle it came from
+
+  // Same scenario, but the prior walk was to the RIGHT instead.
+  const q = makeAttachedPigeon(400, 300, {
+    idleDurationMs: 1_000_000,
+    weirdBehaviorIntervalMs: 100,
+    rng: () => 0,
+  });
+  q.flyTo({ x: 700, y: 300 }, 1000, { state: STATES.WALKING, arriveState: STATES.IDLE }); // walk right
+  q.update(1000); // arrives, IDLE, facing right (mirrored, scale.x -1)
+  expect(q.sprite.scale.x).toBe(-1);
+
+  q.update(100); // triggers flipOver
+  expect(q.getState()).toBe(STATES.WEIRD_BEHAVIOR);
+  expect(q.sprite.scale.x).toBe(-1); // still facing right, matching that idle
+});
+
+test('a temporary pigeon spawned already in EATING gets the correct default (native) facing on attach', () => {
+  const p = new Pigeon(FULL_SPRITESHEET, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
+  p._enterState(STATES.EATING); // sprite is null here, facing can't be applied yet
+  p.attachSprite(MOCK_PIXI, { addChild() {} });
+  expect(p.sprite.scale.x).toBe(1); // default facingRight=false matches eat's native-left art
+});

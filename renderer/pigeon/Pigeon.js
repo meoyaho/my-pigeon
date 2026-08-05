@@ -43,6 +43,7 @@ class Pigeon {
     this.stateElapsedMs = 0;
     this.weirdBehaviorTimerMs = 0;
     this.sprite = null;
+    this.facingRight = false; // matches walk/idle/weird-behaviors' native left-facing art
   }
 
   getState() {
@@ -207,9 +208,18 @@ class Pigeon {
   // _enterState(), so every transition (including ones triggered by Flock or
   // dragHandler calling _enterState()/startDrag() directly) gets the right
   // animation for free — no call site needs to remember to swap art itself.
+  //
+  // Also re-applies the pigeon's last known facing direction to the new
+  // animation (e.g. entering WEIRD_BEHAVIOR from IDLE keeps whatever
+  // direction the pigeon was already facing) — flyTo()/scatterAwayFrom()
+  // call _applyFacing() with the real travel direction right after this
+  // runs, which overrides this for states that actually move.
   _syncSpriteAnimation() {
     const animName = this._animationForState();
-    if (animName) this._setSpriteAnimation(animName);
+    if (animName) {
+      this._setSpriteAnimation(animName);
+      this._reapplyFacing(animName);
+    }
   }
 
   // x/y is the sprite's CENTER (attachSprite sets anchor to 0.5/0.5), so the
@@ -382,9 +392,22 @@ class Pigeon {
   // leaves the current facing untouched rather than guessing.
   _applyFacing(animName, directionX) {
     if (!this.sprite || !directionX) return;
-    const facesRightNatively = animName === 'flyIn' || animName === 'flyOut';
-    const wantsToFaceRight = directionX > 0;
-    this.sprite.scale.x = (wantsToFaceRight === facesRightNatively) ? 1 : -1;
+    this.facingRight = directionX > 0;
+    this.sprite.scale.x = (this.facingRight === this._facesRightNatively(animName)) ? 1 : -1;
+  }
+
+  // Re-applies the pigeon's last known facing (this.facingRight, last set by
+  // _applyFacing) to a newly-entered animation that has no travel direction
+  // of its own — e.g. WEIRD_BEHAVIOR triggered from IDLE should keep facing
+  // whichever way the pigeon was already facing, not snap back to the art's
+  // native direction. No-ops before a sprite is attached.
+  _reapplyFacing(animName) {
+    if (!this.sprite) return;
+    this.sprite.scale.x = (this.facingRight === this._facesRightNatively(animName)) ? 1 : -1;
+  }
+
+  _facesRightNatively(animName) {
+    return animName === 'flyIn' || animName === 'flyOut';
   }
 
   maybeStartle(rng = Math.random, probability = 0.4) {
@@ -445,6 +468,10 @@ class Pigeon {
       ? this.opts.weirdBehaviorAnimationSpeed
       : this.opts.animationSpeed;
     this.sprite.play();
+    // _enterState()/_syncSpriteAnimation() no-op'd on facing before this.sprite
+    // existed (e.g. a temporary pigeon entering EATING before its sprite is
+    // attached) — apply the pigeon's current facing now that it does.
+    this._reapplyFacing(initialAnim);
     // Skip the auto-clamp while mid-flight (e.g. a temporary pigeon spawned
     // off-screen, about to fly in) — clamping here would snap it back
     // on-screen instantly, before it ever gets to visibly fly in.
