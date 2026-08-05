@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "My Pigeon",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A small pigeon that wanders around Chrome pages.",
   "icons": {
     "16": "assets/icon-16.png",
@@ -13,11 +13,11 @@
     "default_title": "My Pigeon",
     "default_popup": "popup.html"
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "permissions": [
     "storage"
-  ],
-  "host_permissions": [
-    "<all_urls>"
   ],
   "content_scripts": [
     {
@@ -27,7 +27,7 @@
       "js": [
         "content.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [

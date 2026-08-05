@@ -4,13 +4,23 @@
 
   const ROOT_ID = 'my-pigeon-extension-root';
   const DEFAULTS = { enabled: true };
+  const STUDY_STORAGE_KEY = 'myPigeonStudySession';
+  const OFF_DUTY_STORAGE_KEY = 'myPigeonOffDuty';
+  const ACTOR_STORAGE_KEY = 'myPigeonActorState';
+  const READY_MESSAGE = 'myPigeon:documentReady';
+  const ACTIVE_MESSAGE = 'myPigeon:setActive';
   const MAX_TEMPORARY_PIGEONS = 8;
 
   const CONFIG = {
+    focusDurationMs: 25 * 60 * 1000,
+    restDurationMs: 5 * 60 * 1000,
     idleDurationMs: 25 * 60 * 1000,
     weirdBehaviorIntervalMs: 15000,
+    focusBehaviorIntervalMs: 4 * 60 * 1000,
     weirdBehaviorDurationMs: 2500,
+    focusDozeDurationMs: 45000,
     oneLegDozeDurationMs: 5 * 60 * 1000,
+    restMoveIntervalMs: 5500,
     walkSpeed: 0.06,
     flightSpeed: 0.35,
     hopSpeed: 0.06,
@@ -19,15 +29,17 @@
     cornerArrivalThreshold: 80,
     spawnStaggerMs: 150,
     feedModeTimeoutMs: 5000,
+    feedGatherMinRadius: 66,
+    feedGatherMaxRadius: 130,
+    restBubbleDurationMs: 4200,
+    actorSyncIntervalMs: 800,
     scatterVelocityPxPerMs: 1.3,
-    accessoryScanIntervalMs: 1200,
-    accessoryPickupCooldownMs: 4000,
   };
 
   const SPRITES = {
     idle: ['idle_01.png', 'idle_02.png'],
     walk: ['walk_01.png', 'walk_02.png'],
-    hopInPlace: ['hopInPlace_01.png', 'hopInPlace_02.png'],
+    hopInPlace: ['idle_01.png', 'hopInPlace.png'],
     flipOver: ['flipOver_01.png', 'flipOver_02.png', 'flipOver_03.png'],
     oneLegDoze: ['oneLegDoze_01.png', 'oneLegDoze_02.png'],
     courtshipCoo: ['courtshipCoo_01.png', 'courtshipCoo_02.png', 'courtshipCoo_03.png'],
@@ -69,17 +81,17 @@
 
   const GREETINGS = [
     '오늘도 열심히 해보자고',
-    '개같은 아침! 출근했다',
+    '둥근해 또 떴네',
     '오늘 하루도 힘내자고',
     '자, 오늘도 시작해볼까',
-    '나 왔다. 각자의 자리에서 최선을 다하자고',
+    '나 신경 쓰지 말고 할일 해',
   ];
 
   const FAREWELLS = [
     '오늘도 수고했다',
     '내일 또 만나',
-    '오늘 하루도 끝! 빨리 꺼져',
-    '쉬어, 나도 이만 애보러 간다',
+    '오늘 하루도 끝!',
+    '쉬어, 나는 집 간다',
     '오늘 몫은 다 했다, 안녕!',
   ];
 
@@ -89,14 +101,24 @@
     main: null,
     tempActors: [],
     nextActorId: 1,
+    remountAfterCommuteOut: false,
+    enabled: true,
+    offDuty: false,
+    activeSurface: hasLocalFocus(),
+    settingsLoaded: false,
+    forceCommuteIn: false,
     menu: null,
+    feedButton: null,
+    feedStatus: null,
     feedLayer: null,
     food: null,
     bubbleTimer: null,
     timers: new Set(),
     raf: 0,
     lastTickAt: 0,
+    nextActorPersistAt: 0,
     phase: 'normal',
+    studyAlignmentSuppressedUntil: 0,
     feed: {
       choosing: false,
       feeding: false,
@@ -105,18 +127,25 @@
       spawnedCount: 0,
       timeoutId: null,
     },
+    study: {
+      startedAt: 0,
+      rewardAvailable: false,
+      flapCount: 0,
+      focusedMinutes: 0,
+      completedAt: 0,
+      restNoticeId: 0,
+      restUntil: 0,
+    },
     mouse: {
       x: 0,
       y: 0,
       t: 0,
     },
-    draggedAsset: null,
-    nextAccessoryScanAt: 0,
-    accessoryPickupCooldownUntil: 0,
   };
 
   const runtime = typeof chrome !== 'undefined' ? chrome.runtime : null;
   const storage = typeof chrome !== 'undefined' ? chrome.storage : null;
+  const studyStorage = storage?.local || null;
 
   function asset(path) {
     return runtime ? runtime.getURL(path) : path;
@@ -130,8 +159,64 @@
     return items[Math.floor(Math.random() * items.length) % items.length];
   }
 
+  function formatRemaining(ms) {
+    const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = String(totalSeconds % 60).padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  }
+
+  function studyNow() {
+    return Date.now();
+  }
+
+  function normalizeTimestamp(value) {
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  function normalizeStudySession(value = {}) {
+    const raw = value && typeof value === 'object' ? value : {};
+    const session = {
+      startedAt: normalizeTimestamp(raw.startedAt),
+      rewardAvailable: Boolean(raw.rewardAvailable),
+      flapCount: Math.max(0, Math.floor(Number(raw.flapCount) || 0)),
+      focusedMinutes: Math.max(0, Math.floor(Number(raw.focusedMinutes) || 0)),
+      completedAt: normalizeTimestamp(raw.completedAt),
+      restNoticeId: normalizeTimestamp(raw.restNoticeId),
+      restUntil: normalizeTimestamp(raw.restUntil),
+    };
+    if (session.rewardAvailable && !session.restUntil && session.completedAt) {
+      session.restUntil = session.completedAt + CONFIG.restDurationMs;
+    }
+    if (session.rewardAvailable) session.startedAt = 0;
+    return session;
+  }
+
+  function persistStudySession(overrides = {}) {
+    const next = normalizeStudySession({ ...state.study, ...overrides });
+    state.study = { ...state.study, ...next };
+    if (studyStorage) studyStorage.set({ [STUDY_STORAGE_KEY]: next });
+    return next;
+  }
+
+  function isFocusActive() {
+    return Boolean(state.study.startedAt && !state.study.rewardAvailable);
+  }
+
+  function isRestActive(now = studyNow()) {
+    return Boolean(state.study.rewardAvailable && state.study.restUntil && now < state.study.restUntil);
+  }
+
+  function isStudyPending() {
+    return !state.study.startedAt && !state.study.rewardAvailable;
+  }
+
   function isHtmlDocument() {
     return document.documentElement && document.documentElement.nodeName.toLowerCase() === 'html';
+  }
+
+  function hasLocalFocus() {
+    return document.visibilityState === 'visible' && document.hasFocus();
   }
 
   function later(fn, delayMs) {
@@ -153,7 +238,7 @@
     el.className = `pigeon-wrap ${kind}`;
     el.dataset.actorId = String(state.nextActorId);
     el.innerHTML = kind === 'main'
-      ? '<div class="bubble" aria-hidden="true"></div><img class="head-accessory" alt="" draggable="false" hidden /><img class="pigeon-img" alt="" draggable="false" />'
+      ? '<div class="bubble" aria-hidden="true"></div><img class="pigeon-img" alt="" draggable="false" />'
       : '<img class="pigeon-img" alt="" draggable="false" />';
 
     const actor = {
@@ -162,8 +247,6 @@
       el,
       img: el.querySelector('.pigeon-img'),
       bubble: el.querySelector('.bubble'),
-      accessoryImg: el.querySelector('.head-accessory'),
-      headAsset: null,
       x,
       y,
       target: null,
@@ -187,7 +270,6 @@
   }
 
   function removeActor(actor) {
-    if (actor.headAsset?.objectUrl) URL.revokeObjectURL(actor.headAsset.objectUrl);
     actor.el.remove();
     state.tempActors = state.tempActors.filter((item) => item !== actor);
   }
@@ -203,10 +285,9 @@
 
   function getMargins(actor = state.main) {
     const box = getBox(actor);
-    const accessoryClearance = actor?.headAsset ? Math.min(52, Math.max(32, box.height * 0.2)) : 0;
     return {
       x: box.width / 2 + 8,
-      y: box.height / 2 + 8 + accessoryClearance,
+      y: box.height / 2 + 8,
     };
   }
 
@@ -218,6 +299,12 @@
     };
   }
 
+  function applyActorDepth(actor) {
+    if (!actor?.el) return;
+    const depth = actor.drag ? 5000 : 100 + Math.max(0, Math.round(actor.y));
+    actor.el.style.zIndex = String(depth);
+  }
+
   function applyActorPosition(actor) {
     if (!actor?.el) return;
     if (!actor.allowOffscreen) {
@@ -227,6 +314,7 @@
     }
     const box = getBox(actor);
     actor.el.style.transform = `translate3d(${Math.round(actor.x - box.width / 2)}px, ${Math.round(actor.y - box.height / 2)}px, 0)`;
+    applyActorDepth(actor);
   }
 
   function getCorners(actor = state.main) {
@@ -276,8 +364,6 @@
   function applyFacing(actor, mode = actor.mode) {
     const scaleX = actor.facingRight === modeFacesRightNatively(mode) ? 1 : -1;
     actor.el.style.setProperty('--pigeon-direction', String(scaleX));
-    actor.el.style.setProperty('--head-accessory-x', actor.facingRight ? '60%' : '40%');
-    actor.el.style.setProperty('--head-accessory-tilt', actor.facingRight ? '5deg' : '-5deg');
   }
 
   function faceTravelDirection(actor, directionX, mode, options = {}) {
@@ -290,9 +376,6 @@
 
   function setMode(actor, mode, now = performance.now()) {
     if (!SPRITES[mode] || actor.mode === mode) return;
-    if (actor.kind === 'main' && actor.headAsset && !canCarryHeadAssetInMode(mode)) {
-      dropHeadAsset(actor);
-    }
     actor.mode = mode;
     actor.frameIndex = 0;
     actor.lastFrameAt = now;
@@ -302,9 +385,11 @@
   }
 
   function weirdBehaviorDurationFor(mode) {
-    return mode === 'oneLegDoze'
-      ? CONFIG.oneLegDozeDurationMs
-      : CONFIG.weirdBehaviorDurationMs;
+    if (mode === 'oneLegDoze') {
+      if (isRestActive()) return CONFIG.weirdBehaviorDurationMs;
+      return isFocusActive() ? CONFIG.focusDozeDurationMs : CONFIG.oneLegDozeDurationMs;
+    }
+    return CONFIG.weirdBehaviorDurationMs;
   }
 
   function sequencedWeirdFrame(mode, elapsedMs) {
@@ -344,183 +429,6 @@
     }
   }
 
-  function canCarryHeadAssetInMode(mode) {
-    return mode === 'idle' || mode === 'walk' || mode === 'hopInPlace';
-  }
-
-  function isMainIdleForAccessory() {
-    const actor = state.main;
-    return Boolean(actor && state.phase === 'normal' && actor.mode === 'idle' && !actor.target && !actor.drag);
-  }
-
-  function attachHeadAsset(actor, asset) {
-    if (!actor?.accessoryImg || !asset?.src || !isMainIdleForAccessory()) return false;
-    if (actor.headAsset?.objectUrl) URL.revokeObjectURL(actor.headAsset.objectUrl);
-    actor.headAsset = {
-      src: asset.src,
-      objectUrl: asset.objectUrl || null,
-    };
-    actor.accessoryImg.src = asset.src;
-    actor.accessoryImg.hidden = false;
-    return true;
-  }
-
-  function dropHeadAsset(actor = state.main) {
-    if (!actor?.headAsset || !actor.accessoryImg) return;
-
-    const oldAsset = actor.headAsset;
-    const rect = actor.accessoryImg.getBoundingClientRect();
-    const falling = document.createElement('img');
-    falling.className = 'fallen-accessory';
-    falling.src = oldAsset.src;
-    falling.alt = '';
-    falling.draggable = false;
-    falling.style.left = `${Math.round(rect.left)}px`;
-    falling.style.top = `${Math.round(rect.top)}px`;
-    falling.style.width = `${Math.max(20, Math.round(rect.width || 34))}px`;
-    falling.style.height = `${Math.max(20, Math.round(rect.height || 34))}px`;
-    state.shadow?.appendChild(falling);
-    later(() => falling.remove(), 1200);
-
-    actor.accessoryImg.hidden = true;
-    actor.accessoryImg.removeAttribute('src');
-    actor.headAsset = null;
-    state.accessoryPickupCooldownUntil = performance.now() + CONFIG.accessoryPickupCooldownMs;
-    if (oldAsset.objectUrl) later(() => URL.revokeObjectURL(oldAsset.objectUrl), 1200);
-  }
-
-  function parseCssImageUrl(backgroundImage) {
-    const match = /url\((['"]?)(.*?)\1\)/.exec(backgroundImage || '');
-    return match ? match[2] : '';
-  }
-
-  function normalizeImageUrl(src) {
-    if (!src) return '';
-    try {
-      return new URL(src, document.baseURI).href;
-    } catch {
-      return '';
-    }
-  }
-
-  function isUsableImageUrl(src) {
-    return /^(https?:|data:image\/|blob:)/i.test(src);
-  }
-
-  function imageAssetFromElement(element) {
-    if (!element || element === state.host || state.host?.contains(element)) return null;
-    const candidate = element.closest?.('img, [draggable="true"]') || element;
-
-    let src = '';
-    if (candidate instanceof HTMLImageElement) {
-      src = candidate.currentSrc || candidate.src;
-    }
-
-    if (!src) {
-      const childImage = candidate.querySelector?.('img');
-      if (childImage instanceof HTMLImageElement) {
-        src = childImage.currentSrc || childImage.src;
-      }
-    }
-
-    if (!src && candidate instanceof Element) {
-      src = parseCssImageUrl(getComputedStyle(candidate).backgroundImage);
-    }
-
-    src = normalizeImageUrl(src);
-    if (!isUsableImageUrl(src)) return null;
-    return { src };
-  }
-
-  function imageAssetFromDataTransfer(dataTransfer) {
-    if (!dataTransfer) return null;
-
-    const imageFile = [...(dataTransfer.files || [])].find((file) => file.type.startsWith('image/'));
-    if (imageFile) {
-      const objectUrl = URL.createObjectURL(imageFile);
-      return { src: objectUrl, objectUrl };
-    }
-
-    const html = dataTransfer.getData('text/html');
-    if (html) {
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      const img = doc.querySelector('img[src]');
-      const src = normalizeImageUrl(img?.getAttribute('src'));
-      if (isUsableImageUrl(src)) return { src };
-    }
-
-    const uriList = dataTransfer.getData('text/uri-list')
-      .split('\n')
-      .map((line) => line.trim())
-      .find((line) => line && !line.startsWith('#'));
-    const uri = normalizeImageUrl(uriList);
-    if (isUsableImageUrl(uri)) return { src: uri };
-
-    const plainText = dataTransfer.getData('text/plain').trim();
-    if (/^(https?:|data:image\/|blob:)/i.test(plainText)) {
-      const text = normalizeImageUrl(plainText);
-      if (isUsableImageUrl(text)) return { src: text };
-    }
-
-    return state.draggedAsset ? { ...state.draggedAsset } : null;
-  }
-
-  function cornerRegionForActor(actor) {
-    const cornerIndex = nearestCornerIndex(actor);
-    const width = Math.min(360, Math.max(180, window.innerWidth * 0.34));
-    const height = Math.min(300, Math.max(160, window.innerHeight * 0.34));
-    const right = cornerIndex === 1 || cornerIndex === 3;
-    const bottom = cornerIndex === 2 || cornerIndex === 3;
-    return {
-      left: right ? window.innerWidth - width : 0,
-      top: bottom ? window.innerHeight - height : 0,
-      right: right ? window.innerWidth : width,
-      bottom: bottom ? window.innerHeight : height,
-    };
-  }
-
-  function rectsIntersect(a, b) {
-    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-  }
-
-  function findCornerImageAsset(actor) {
-    const region = cornerRegionForActor(actor);
-    const candidates = document.querySelectorAll('img:not([draggable="false"]), [draggable="true"] img, [draggable="true"]');
-    let best = null;
-    let bestDistance = Infinity;
-
-    for (const element of candidates) {
-      if (!(element instanceof Element) || state.host?.contains(element)) continue;
-      const rect = element.getBoundingClientRect();
-      if (rect.width < 12 || rect.height < 12) continue;
-      if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= window.innerWidth || rect.top >= window.innerHeight) continue;
-      if (!rectsIntersect(rect, region)) continue;
-
-      const asset = imageAssetFromElement(element);
-      if (!asset) continue;
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const distance = Math.hypot(centerX - actor.x, centerY - actor.y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = asset;
-      }
-    }
-
-    return best;
-  }
-
-  function maybePickupCornerAsset(now) {
-    const actor = state.main;
-    if (!actor || actor.headAsset || !isMainIdleForAccessory()) return;
-    if (!isAtCorner(actor)) return;
-    if (now < state.nextAccessoryScanAt || now < state.accessoryPickupCooldownUntil) return;
-    state.nextAccessoryScanAt = now + CONFIG.accessoryScanIntervalMs;
-
-    const asset = findCornerImageAsset(actor);
-    if (asset) attachHeadAsset(actor, asset);
-  }
-
   function showBubble(text, durationMs = 0) {
     const actor = state.main;
     if (!actor?.bubble) return;
@@ -541,12 +449,271 @@
     if (state.main?.el) state.main.el.classList.remove('show-bubble');
   }
 
+  function normalizeRatio(value, fallback = 0.5) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.max(0, Math.min(1, number));
+  }
+
+  function pointToRatios(point) {
+    return {
+      xRatio: window.innerWidth > 0 ? normalizeRatio(point.x / window.innerWidth) : 0.5,
+      yRatio: window.innerHeight > 0 ? normalizeRatio(point.y / window.innerHeight) : 0.5,
+    };
+  }
+
+  function pointFromRatios(value, fallback = { xRatio: 0.5, yRatio: 0.5 }) {
+    return {
+      x: normalizeRatio(value?.xRatio, fallback.xRatio) * window.innerWidth,
+      y: normalizeRatio(value?.yRatio, fallback.yRatio) * window.innerHeight,
+    };
+  }
+
+  function actorSnapshotMode(mode) {
+    if (!SPRITES[mode] || mode === 'dragged') return 'idle';
+    return mode;
+  }
+
+  function persistActorSnapshot(options = {}) {
+    const actor = state.main;
+    if (!storage?.local || !actor || state.offDuty || state.phase === 'commuteOut') return;
+    if (!options.force && (!state.activeSurface || performance.now() < state.nextActorPersistAt)) return;
+
+    state.nextActorPersistAt = performance.now() + CONFIG.actorSyncIntervalMs;
+    const position = pointToRatios(actor);
+    const target = actor.target && !actor.allowOffscreen ? pointToRatios(actor.target) : null;
+    storage.local.set({
+      [ACTOR_STORAGE_KEY]: {
+        ...position,
+        target,
+        mode: actorSnapshotMode(actor.mode),
+        frameIndex: Math.max(0, Math.floor(actor.frameIndex || 0)),
+        facingRight: Boolean(actor.facingRight),
+        speedPxPerMs: Number.isFinite(actor.speedPxPerMs) ? actor.speedPxPerMs : 0,
+        stateElapsedMs: Math.max(0, Math.floor(actor.stateElapsedMs || 0)),
+        weirdBehaviorTimerMs: Math.max(0, Math.floor(actor.weirdBehaviorTimerMs || 0)),
+        savedAt: Date.now(),
+      },
+    });
+  }
+
+  function restoreActorSnapshot(value, now = performance.now()) {
+    const actor = state.main;
+    if (!actor || !value || typeof value !== 'object') return false;
+    if (!Number.isFinite(Number(value.xRatio)) || !Number.isFinite(Number(value.yRatio))) return false;
+
+    const point = pointFromRatios(value);
+    actor.x = point.x;
+    actor.y = point.y;
+    actor.facingRight = Boolean(value.facingRight);
+    actor.target = null;
+    actor.onArrive = null;
+    actor.allowOffscreen = false;
+
+    const mode = actorSnapshotMode(value.mode);
+    setMode(actor, mode, now);
+    applyFacing(actor, mode);
+    actor.frameIndex = Math.max(0, Math.floor(Number(value.frameIndex) || 0));
+    actor.stateElapsedMs = Math.max(0, Math.floor(Number(value.stateElapsedMs) || 0));
+    actor.weirdBehaviorTimerMs = Math.max(0, Math.floor(Number(value.weirdBehaviorTimerMs) || 0));
+
+    if (value.target && (mode === 'walk' || mode === 'hopInPlace' || mode === 'flyIn' || mode === 'flyOut')) {
+      const target = clampCenter(pointFromRatios(value.target), actor);
+      actor.target = target;
+      actor.speedPxPerMs = Number.isFinite(Number(value.speedPxPerMs)) && Number(value.speedPxPerMs) > 0
+        ? Number(value.speedPxPerMs)
+        : CONFIG.walkSpeed;
+      faceTravelDirection(actor, target.x - actor.x, mode);
+    }
+
+    state.phase = 'normal';
+    updateFrame(actor, true, now);
+    applyActorPosition(actor);
+    return true;
+  }
+
+  function loadActorSnapshot(callback) {
+    if (!storage?.local) {
+      callback(false);
+      return;
+    }
+    storage.local.get({ [ACTOR_STORAGE_KEY]: null }, (result) => {
+      callback(restoreActorSnapshot(result[ACTOR_STORAGE_KEY]));
+    });
+  }
+
+  function applyStudySession(value, options = {}) {
+    const previousNoticeId = state.study.restNoticeId;
+    const next = normalizeStudySession(value);
+    state.study = { ...state.study, ...next };
+    updateFeedMenu();
+
+    const shouldShowRestNotice = options.showRestNotice
+      && next.rewardAvailable
+      && next.restNoticeId
+      && next.restNoticeId !== previousNoticeId;
+    if (shouldShowRestNotice) showRestNotice();
+
+    if (performance.now() < state.studyAlignmentSuppressedUntil) return;
+    if (!state.host || options.alignActor === false || state.phase !== 'normal' || !state.main?.el) return;
+    if (next.startedAt && !isAtCorner(state.main)) {
+      moveToFocusCorner(state.main);
+    } else if (!next.startedAt && !next.rewardAvailable) {
+      moveToFocusCorner(state.main, { startOnArrive: true });
+    }
+  }
+
+  function syncLocalStudyClock() {
+    const now = studyNow();
+    if (state.study.startedAt && now - state.study.startedAt >= CONFIG.focusDurationMs) {
+      const completedAt = state.study.startedAt + CONFIG.focusDurationMs;
+      state.study = normalizeStudySession({
+        ...state.study,
+        startedAt: 0,
+        rewardAvailable: true,
+        focusedMinutes: Math.max(25, Math.round((completedAt - state.study.startedAt) / 60000)),
+        completedAt,
+        restNoticeId: completedAt,
+        restUntil: completedAt + CONFIG.restDurationMs,
+      });
+    }
+
+    if (state.study.rewardAvailable && state.study.restUntil && now >= state.study.restUntil) {
+      state.study = normalizeStudySession({
+        startedAt: 0,
+        rewardAvailable: false,
+        flapCount: 0,
+        focusedMinutes: 0,
+        completedAt: 0,
+        restNoticeId: 0,
+        restUntil: 0,
+      });
+    }
+    updateFeedMenu();
+  }
+
+  function loadStudySession(callback) {
+    if (!studyStorage) {
+      callback();
+      return;
+    }
+    studyStorage.get({ [STUDY_STORAGE_KEY]: null }, (result) => {
+      applyStudySession(result[STUDY_STORAGE_KEY], { alignActor: false, showRestNotice: false });
+      syncLocalStudyClock();
+      callback();
+    });
+  }
+
+  function startStudyPeriod(now = studyNow()) {
+    if (state.main) {
+      state.main.stateElapsedMs = 0;
+      state.main.weirdBehaviorTimerMs = 0;
+    }
+    persistStudySession({
+      startedAt: now,
+      rewardAvailable: false,
+      flapCount: 0,
+      focusedMinutes: 0,
+      completedAt: 0,
+      restNoticeId: 0,
+      restUntil: 0,
+    });
+    updateFeedMenu(now);
+  }
+
+  function studyElapsedMs(now = studyNow()) {
+    return state.study.startedAt ? Math.max(0, now - state.study.startedAt) : 0;
+  }
+
+  function studyRemainingMs(now = studyNow()) {
+    if (state.study.rewardAvailable) return 0;
+    if (!state.study.startedAt) return CONFIG.focusDurationMs;
+    return Math.max(0, CONFIG.focusDurationMs - studyElapsedMs(now));
+  }
+
+  function updateFeedMenu(now = studyNow()) {
+    if (!state.feedButton || !state.feedStatus) return;
+    let statusText = '';
+    if (state.study.rewardAvailable) {
+      if (isRestActive(now)) statusText = `쉬는 ${formatRemaining(state.study.restUntil - now)}`;
+    } else {
+      statusText = formatRemaining(studyRemainingMs(now));
+    }
+
+    state.feedButton.classList.toggle('reward-ready', state.study.rewardAvailable);
+    state.feedButton.classList.toggle('reward-waiting', !state.study.rewardAvailable);
+    state.feedButton.classList.toggle('status-empty', !statusText);
+    state.feedStatus.textContent = statusText;
+  }
+
+  function countStudyFlap(actor, mode) {
+    if (actor?.kind !== 'main') return;
+    if (!state.study.startedAt || state.study.rewardAvailable) return;
+    if (state.phase !== 'normal') return;
+    if (mode !== 'flyIn' && mode !== 'flyOut') return;
+    persistStudySession({ flapCount: state.study.flapCount + 1 });
+  }
+
+  function showRestNotice() {
+    const actor = state.main;
+    if (!actor) return;
+    const showNotice = (now = performance.now()) => {
+      state.phase = 'normal';
+      enterIdle(actor, now);
+      actor.stateElapsedMs = 0;
+      actor.weirdBehaviorTimerMs = 0;
+      showBubble('25분 끝! 먹이 줘!', CONFIG.restBubbleDurationMs);
+    };
+
+    if (state.phase !== 'normal' || actor.drag) {
+      showNotice();
+      return;
+    }
+
+    hideBubble();
+    state.phase = 'restNotice';
+    travelActor(actor, {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    }, 'walk', CONFIG.walkSpeed, showNotice);
+  }
+
+  function completeStudyPeriod(options = {}) {
+    if (!state.study.startedAt || state.study.rewardAvailable) return;
+
+    const now = studyNow();
+    const focusedMinutes = Math.max(1, Math.round(studyElapsedMs(now) / 60000));
+    const flapCount = state.study.flapCount;
+    persistStudySession({
+      startedAt: 0,
+      rewardAvailable: true,
+      flapCount,
+      focusedMinutes,
+      completedAt: now,
+      restNoticeId: now,
+      restUntil: now + CONFIG.restDurationMs,
+    });
+
+    if (options.showRestNotice !== false) showRestNotice();
+    updateFeedMenu(now);
+  }
+
+  function updateStudyPeriod(options = {}) {
+    if (state.study.rewardAvailable) {
+      if (state.study.restUntil && studyNow() >= state.study.restUntil) finishRestPeriod();
+      return;
+    }
+    if (!state.study.startedAt) return;
+    if (studyElapsedMs() >= CONFIG.focusDurationMs) completeStudyPeriod(options);
+  }
+
   function resolveTravelTarget(actor, target, options = {}) {
     return options.clampTarget === false ? target : clampCenter(target, actor);
   }
 
   function travelActor(actor, target, mode, speedPxPerMs, onArrive = null, options = {}) {
     const resolvedTarget = resolveTravelTarget(actor, target, options);
+    countStudyFlap(actor, mode);
     actor.target = resolvedTarget;
     actor.speedPxPerMs = speedPxPerMs;
     actor.onArrive = onArrive;
@@ -603,8 +770,50 @@
     }
   }
 
+  function moveToFocusCorner(actor = state.main, options = {}) {
+    if (!actor || actor.drag || state.phase === 'commuteOut') return;
+    const nearest = pickNearestCorner(actor);
+    const distance = Math.hypot(nearest.x - actor.x, nearest.y - actor.y);
+    const arrive = (now = performance.now()) => {
+      state.phase = 'normal';
+      enterIdle(actor, now);
+      if (options.startOnArrive) startStudyPeriod();
+    };
+
+    hideBubble();
+    if (distance <= CONFIG.cornerArrivalThreshold) {
+      arrive();
+      return;
+    }
+
+    state.phase = 'focusSetup';
+    travelActor(actor, nearest, 'walk', CONFIG.walkSpeed, arrive, {
+      backwards: Math.random() < CONFIG.backwardsWalkProbability,
+    });
+  }
+
+  function finishRestPeriod() {
+    if (!state.study.rewardAvailable) return;
+    if (state.phase !== 'normal' && state.phase !== 'feeding') return;
+
+    hideMenu();
+    hideBubble();
+    cancelFeedMode();
+    clearTemporaryPigeons();
+    persistStudySession({
+      startedAt: 0,
+      rewardAvailable: false,
+      flapCount: 0,
+      focusedMinutes: 0,
+      completedAt: 0,
+      restNoticeId: 0,
+      restUntil: 0,
+    });
+    moveToFocusCorner(state.main, { startOnArrive: true });
+    updateFeedMenu();
+  }
+
   function triggerWeirdBehavior(actor, now) {
-    dropHeadAsset(actor);
     const behavior = pick(WEIRD_BEHAVIORS);
     actor.weirdBehaviorTimerMs = 0;
     setMode(actor, behavior, now);
@@ -628,12 +837,38 @@
 
     if (actor.mode !== 'idle') return;
 
+    if (isStudyPending() && isAtCorner(actor)) {
+      startStudyPeriod();
+      return;
+    }
+
+    if (isFocusActive()) {
+      if (!isAtCorner(actor)) {
+        moveToFocusCorner(actor);
+        return;
+      }
+      if (actor.weirdBehaviorTimerMs >= CONFIG.focusBehaviorIntervalMs) {
+        actor.weirdBehaviorTimerMs = 0;
+        setMode(actor, 'oneLegDoze', now);
+      }
+      return;
+    }
+
+    if (isRestActive()) {
+      if (actor.stateElapsedMs >= CONFIG.restMoveIntervalMs) {
+        walkToRandomCorner(actor);
+        return;
+      }
+      if (actor.weirdBehaviorTimerMs >= CONFIG.weirdBehaviorIntervalMs) {
+        triggerWeirdBehavior(actor, now);
+      }
+      return;
+    }
+
     if (actor.weirdBehaviorTimerMs >= CONFIG.weirdBehaviorIntervalMs) {
       triggerWeirdBehavior(actor, now);
       return;
     }
-
-    maybePickupCornerAsset(now);
 
     if (actor.stateElapsedMs >= CONFIG.idleDurationMs) {
       walkToRandomCorner(actor);
@@ -643,8 +878,8 @@
   function startCommuteIn() {
     const actor = state.main;
     state.phase = 'commuteIn';
-    actor.x = -150;
-    actor.y = -100;
+    actor.x = -220;
+    actor.y = -140;
     actor.allowOffscreen = true;
     applyActorPosition(actor);
 
@@ -654,12 +889,26 @@
     }, 'flyIn', 1200, (now) => {
       state.phase = 'normal';
       enterIdle(actor, now);
-      showBubble(pick(GREETINGS), 2400);
-      later(() => {
-        if (state.host && state.phase === 'normal' && !actor.drag) {
-          walkToRandomCorner(actor, true);
-        }
-      }, 3000);
+      if (state.study.rewardAvailable) {
+        if (isRestActive()) showRestNotice();
+        else finishRestPeriod();
+      } else if (state.study.startedAt) {
+        state.studyAlignmentSuppressedUntil = now + 3200;
+        showBubble(pick(GREETINGS), 2400);
+        later(() => {
+          if (state.host && state.phase === 'normal' && !actor.drag && state.study.startedAt) {
+            moveToFocusCorner(actor);
+          }
+        }, 3000);
+      } else {
+        state.studyAlignmentSuppressedUntil = now + 3200;
+        showBubble(pick(GREETINGS), 2400);
+        later(() => {
+          if (state.host && state.phase === 'normal' && !actor.drag && isStudyPending()) {
+            moveToFocusCorner(actor, { startOnArrive: true });
+          }
+        }, 3000);
+      }
     }, { allowOffscreen: true });
   }
 
@@ -672,6 +921,9 @@
     clearTemporaryPigeons();
     clearLaterTimers();
     state.phase = 'commuteOut';
+    state.remountAfterCommuteOut = false;
+    state.offDuty = true;
+    if (storage?.local) storage.local.set({ [OFF_DUTY_STORAGE_KEY]: true });
 
     const center = {
       x: window.innerWidth / 2,
@@ -682,10 +934,15 @@
       showBubble(pick(FAREWELLS), 1600);
       later(() => {
         travelActorDuration(actor, {
-          x: window.innerWidth + 150,
-          y: -100,
+          x: window.innerWidth + 220,
+          y: -140,
         }, 'flyOut', 1000, () => {
+          const shouldRemount = state.remountAfterCommuteOut && state.enabled && !state.offDuty;
           unmount();
+          if (shouldRemount) {
+            state.remountAfterCommuteOut = false;
+            mount();
+          }
         }, { clampTarget: false, allowOffscreen: true });
       }, 1600);
     });
@@ -717,9 +974,36 @@
     return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
   }
 
+  function feedGatherRadius(actor = state.main) {
+    const box = getBox(actor);
+    const viewportRadius = Math.max(52, Math.min(window.innerWidth, window.innerHeight) * 0.24);
+    return Math.min(
+      CONFIG.feedGatherMaxRadius,
+      viewportRadius,
+      Math.max(CONFIG.feedGatherMinRadius, box.width * 0.38),
+    );
+  }
+
+  function feedGatherPoint(foodPoint, slotIndex, actor = state.main) {
+    const totalSlots = MAX_TEMPORARY_PIGEONS + 1;
+    const step = (Math.PI * 2) / totalSlots;
+    const wobble = slotIndex % 2 === 0 ? step * 0.16 : -step * 0.12;
+    const angle = -Math.PI / 2 + slotIndex * step + wobble;
+    const radiusScale = [0.92, 1.14, 1.02][slotIndex % 3];
+    const radius = feedGatherRadius(actor) * radiusScale;
+    return clampCenter({
+      x: foodPoint.x + Math.cos(angle) * radius,
+      y: foodPoint.y + Math.sin(angle) * radius * 0.86,
+    }, actor);
+  }
+
   function startFeedMode(event = null) {
     if (state.phase === 'commuteOut' || state.feed.feeding) return;
     hideMenu();
+    if (!state.study.rewardAvailable) {
+      showBubble(`먹이까지 ${formatRemaining(studyRemainingMs())}`, 1800);
+      return;
+    }
     hideBubble();
     state.feed.choosing = true;
     const startPoint = feedCursorStartPoint(event);
@@ -755,7 +1039,7 @@
   }
 
   function startFeeding(point) {
-    if (state.feed.feeding || !state.main) return;
+    if (state.feed.feeding || !state.main || !state.study.rewardAvailable) return;
     state.phase = 'feeding';
     state.feed.feeding = true;
     state.feed.point = point;
@@ -763,7 +1047,7 @@
     state.feed.spawnedCount = 0;
     showFoodAt(point);
 
-    travelActor(state.main, point, 'flyIn', CONFIG.flightSpeed, (now) => {
+    travelActor(state.main, feedGatherPoint(point, 0, state.main), 'flyIn', CONFIG.flightSpeed, (now) => {
       setMode(state.main, 'eat', now);
     });
   }
@@ -773,15 +1057,10 @@
     if (!foodPoint) return;
 
     state.feed.spawnedCount += 1;
-    const eatAngle = (state.feed.spawnedCount / MAX_TEMPORARY_PIGEONS) * Math.PI * 2;
-    const rawEatPoint = {
-      x: foodPoint.x + Math.cos(eatAngle) * 40,
-      y: foodPoint.y + Math.sin(eatAngle) * 40,
-    };
-
-    const temp = createActor('temporary', rawEatPoint.x, rawEatPoint.y);
-    const eatPoint = clampCenter(rawEatPoint, temp);
-    const arrivalAngle = Math.random() * Math.PI * 2;
+    const temp = createActor('temporary', foodPoint.x, foodPoint.y);
+    const eatPoint = feedGatherPoint(foodPoint, state.feed.spawnedCount, temp);
+    const eatAngle = Math.atan2(eatPoint.y - foodPoint.y, eatPoint.x - foodPoint.x);
+    const arrivalAngle = eatAngle + Math.PI + (Math.random() - 0.5) * 0.9;
     const radius = Math.max(window.innerWidth, window.innerHeight) * 0.75;
     temp.x = eatPoint.x + Math.cos(arrivalAngle) * radius;
     temp.y = eatPoint.y + Math.sin(arrivalAngle) * radius;
@@ -871,8 +1150,11 @@
 
     updateActor(state.main, deltaMs, now);
     for (const actor of [...state.tempActors]) updateActor(actor, deltaMs, now);
+    updateStudyPeriod();
     updateMainIdleBehavior(deltaMs, now);
     updateFeeding(deltaMs);
+    updateFeedMenu();
+    persistActorSnapshot();
 
     state.raf = window.requestAnimationFrame(tick);
   }
@@ -932,33 +1214,6 @@
     else enterIdle(actor);
   }
 
-  function onMainDragOver(event) {
-    if (!isMainIdleForAccessory()) return;
-    const asset = state.draggedAsset || imageAssetFromDataTransfer(event.dataTransfer);
-    if (!asset) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-  }
-
-  function onMainDrop(event) {
-    if (!isMainIdleForAccessory()) return;
-    const asset = imageAssetFromDataTransfer(event.dataTransfer);
-    if (!asset) return;
-    event.preventDefault();
-    event.stopPropagation();
-    attachHeadAsset(state.main, asset);
-    state.draggedAsset = null;
-  }
-
-  function onDocumentDragStart(event) {
-    state.draggedAsset = imageAssetFromElement(event.target);
-  }
-
-  function onDocumentDragEnd() {
-    state.draggedAsset = null;
-  }
-
   function onContextMenu(event) {
     if (state.phase === 'commuteOut') return;
     event.preventDefault();
@@ -968,6 +1223,7 @@
 
   function showMenu(clientX, clientY) {
     if (!state.menu) return;
+    updateFeedMenu();
     state.menu.hidden = false;
     const rect = state.menu.getBoundingClientRect();
     const x = Math.max(8, Math.min(window.innerWidth - rect.width - 8, clientX));
@@ -1022,12 +1278,11 @@
   }
 
   function onWindowBlur() {
-    if (!state.main?.drag && state.phase === 'normal' && Math.random() < 0.4) {
-      setMode(state.main, 'startled');
-      later(() => {
-        if (state.phase === 'normal') fleeToRandomCorner(state.main);
-      }, 1500);
-    }
+    persistActorSnapshot({ force: true });
+  }
+
+  function onPossibleNavigation() {
+    persistActorSnapshot({ force: true });
   }
 
   function bindEvents() {
@@ -1037,8 +1292,6 @@
     actor.el.addEventListener('pointerup', onMainPointerUp);
     actor.el.addEventListener('pointercancel', onMainPointerUp);
     actor.el.addEventListener('contextmenu', onContextMenu);
-    actor.el.addEventListener('dragover', onMainDragOver);
-    actor.el.addEventListener('drop', onMainDrop);
     state.menu.addEventListener('click', onMenuClick);
     state.feedLayer.addEventListener('click', placeFood);
     state.feedLayer.addEventListener('contextmenu', (event) => {
@@ -1050,17 +1303,34 @@
     window.addEventListener('pointerdown', onWindowPointerDown, true);
     window.addEventListener('pointermove', onWindowPointerMove, true);
     window.addEventListener('keydown', onWindowKeyDown);
+    window.addEventListener('click', onPossibleNavigation, true);
+    window.addEventListener('submit', onPossibleNavigation, true);
     window.addEventListener('resize', onWindowResize, { passive: true });
     window.addEventListener('blur', onWindowBlur);
-    document.addEventListener('dragstart', onDocumentDragStart, true);
-    document.addEventListener('dragend', onDocumentDragEnd, true);
+  }
+
+  function rootVisibilityStyles() {
+    const visible = state.enabled && state.activeSurface;
+    return {
+      opacity: visible ? '1' : '0',
+      visibility: visible ? 'visible' : 'hidden',
+    };
+  }
+
+  function applyRootVisibility() {
+    if (!state.host) return;
+    const styles = rootVisibilityStyles();
+    state.host.style.setProperty('opacity', styles.opacity, 'important');
+    state.host.style.setProperty('visibility', styles.visibility, 'important');
   }
 
   function mount() {
+    if (state.offDuty || !state.activeSurface) return;
     if (!isHtmlDocument() || state.host || document.getElementById(ROOT_ID)) return;
 
     const host = document.createElement('my-pigeon');
     host.id = ROOT_ID;
+    const visibilityStyles = rootVisibilityStyles();
     host.style.cssText = [
       'all: initial !important',
       'display: block !important',
@@ -1071,8 +1341,8 @@
       'z-index: 2147483647 !important',
       'overflow: visible !important',
       'pointer-events: none !important',
-      'opacity: 1 !important',
-      'visibility: visible !important',
+      `opacity: ${visibilityStyles.opacity} !important`,
+      `visibility: ${visibilityStyles.visibility} !important`,
       'contain: layout style paint !important',
     ].join(';');
 
@@ -1084,8 +1354,8 @@
           position: absolute;
           left: 0;
           top: 0;
-          width: clamp(160px, 22vmin, 240px);
-          height: clamp(112px, 18vmin, 168px);
+          width: clamp(208px, 28.6vmin, 312px);
+          height: clamp(145.6px, 23.4vmin, 218.4px);
           pointer-events: none;
           user-select: none;
           touch-action: none;
@@ -1094,13 +1364,8 @@
         }
 
         .pigeon-wrap.main {
-          z-index: 3;
           pointer-events: auto;
           cursor: grab;
-        }
-
-        .pigeon-wrap.temporary {
-          z-index: 2;
         }
 
         .pigeon-wrap.dragging {
@@ -1119,45 +1384,6 @@
           transform-origin: center bottom;
           filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.18));
           -webkit-user-drag: none;
-        }
-
-        .head-accessory {
-          position: absolute;
-          left: var(--head-accessory-x, 50%);
-          top: -25%;
-          z-index: 2;
-          width: clamp(22px, 3.8vmin, 34px);
-          height: clamp(22px, 3.8vmin, 34px);
-          object-fit: contain;
-          pointer-events: none;
-          transform: translate(-50%, 0) rotate(var(--head-accessory-tilt, -5deg));
-          transform-origin: center bottom;
-          filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.18));
-          -webkit-user-drag: none;
-        }
-
-        .head-accessory[hidden] {
-          display: none;
-        }
-
-        .fallen-accessory {
-          position: absolute;
-          z-index: 1;
-          object-fit: contain;
-          pointer-events: none;
-          animation: pigeon-accessory-fall 1100ms ease-in forwards;
-          filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.14));
-        }
-
-        @keyframes pigeon-accessory-fall {
-          0% {
-            opacity: 1;
-            transform: translate3d(0, 0, 0) rotate(-5deg);
-          }
-          100% {
-            opacity: 0;
-            transform: translate3d(12px, 72px, 0) rotate(28deg);
-          }
         }
 
         .bubble {
@@ -1189,8 +1415,8 @@
           position: absolute;
           left: 0;
           top: 0;
-          z-index: 4;
-          min-width: 112px;
+          z-index: 20000;
+          min-width: 172px;
           padding: 5px;
           border: 1px solid rgba(0, 0, 0, 0.12);
           border-radius: 8px;
@@ -1205,7 +1431,10 @@
         }
 
         .menu button {
-          display: block;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
           width: 100%;
           padding: 7px 9px;
           border: 0;
@@ -1216,6 +1445,15 @@
           text-align: left;
           white-space: nowrap;
           cursor: default;
+        }
+
+        .feed-status {
+          color: #667085;
+          font: 500 12px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .menu button.status-empty .feed-status {
+          display: none;
         }
 
         .menu button:hover,
@@ -1238,7 +1476,7 @@
         }
 
         .feed-layer.choosing {
-          z-index: 5;
+          z-index: 10000;
           pointer-events: auto;
         }
 
@@ -1258,7 +1496,10 @@
         <img class="food" src="${spriteUrl('food.png')}" alt="" draggable="false" />
       </div>
       <nav class="menu" hidden aria-label="My Pigeon menu">
-        <button type="button" data-action="feed">먹이 주기</button>
+        <button type="button" data-action="feed">
+          <span>먹이 주기</span>
+          <span class="feed-status" data-feed-status>25:00</span>
+        </button>
         <button type="button" data-action="commute-out">퇴근</button>
       </nav>
     `;
@@ -1267,15 +1508,24 @@
     state.host = host;
     state.shadow = shadow;
     state.menu = shadow.querySelector('.menu');
+    state.feedButton = shadow.querySelector('[data-action="feed"]');
+    state.feedStatus = shadow.querySelector('[data-feed-status]');
     state.feedLayer = shadow.querySelector('.feed-layer');
     state.food = shadow.querySelector('.food');
-    state.main = createActor('main', -150, -100);
+    state.main = createActor('main', -220, -140);
 
     bindEvents();
-    startCommuteIn();
-
-    state.lastTickAt = performance.now();
-    state.raf = window.requestAnimationFrame(tick);
+    loadStudySession(() => {
+      loadActorSnapshot((restoredActor) => {
+        if (!state.host) return;
+        const shouldCommuteIn = state.forceCommuteIn || !restoredActor;
+        state.forceCommuteIn = false;
+        state.lastTickAt = performance.now();
+        if (shouldCommuteIn) startCommuteIn();
+        else updateFeedMenu();
+        state.raf = window.requestAnimationFrame(tick);
+      });
+    });
   }
 
   function unmount() {
@@ -1289,23 +1539,22 @@
     window.removeEventListener('pointerdown', onWindowPointerDown, true);
     window.removeEventListener('pointermove', onWindowPointerMove, true);
     window.removeEventListener('keydown', onWindowKeyDown);
+    window.removeEventListener('click', onPossibleNavigation, true);
+    window.removeEventListener('submit', onPossibleNavigation, true);
     window.removeEventListener('resize', onWindowResize);
     window.removeEventListener('blur', onWindowBlur);
-    document.removeEventListener('dragstart', onDocumentDragStart, true);
-    document.removeEventListener('dragend', onDocumentDragEnd, true);
-    if (state.main?.headAsset?.objectUrl) URL.revokeObjectURL(state.main.headAsset.objectUrl);
     if (state.host) state.host.remove();
     state.host = null;
     state.shadow = null;
     state.main = null;
     state.tempActors = [];
     state.menu = null;
+    state.feedButton = null;
+    state.feedStatus = null;
     state.feedLayer = null;
     state.food = null;
     state.phase = 'normal';
-    state.draggedAsset = null;
-    state.nextAccessoryScanAt = 0;
-    state.accessoryPickupCooldownUntil = 0;
+    state.studyAlignmentSuppressedUntil = 0;
     state.feed = {
       choosing: false,
       feeding: false,
@@ -1314,23 +1563,150 @@
       spawnedCount: 0,
       timeoutId: null,
     };
+    state.study = {
+      startedAt: 0,
+      rewardAvailable: false,
+      flapCount: 0,
+      focusedMinutes: 0,
+      completedAt: 0,
+      restNoticeId: 0,
+      restUntil: 0,
+    };
+  }
+
+  function applyVisibility() {
+    if (!state.settingsLoaded) return;
+
+    if (state.offDuty) {
+      if (state.phase === 'commuteOut') {
+        applyRootVisibility();
+        return;
+      }
+      unmount();
+      return;
+    }
+
+    if (!state.activeSurface) {
+      persistActorSnapshot({ force: true });
+      unmount();
+      return;
+    }
+
+    if (state.phase === 'commuteOut') {
+      state.remountAfterCommuteOut = state.enabled;
+      applyRootVisibility();
+      return;
+    }
+
+    mount();
+    applyRootVisibility();
   }
 
   function applyEnabled(enabled) {
-    if (enabled) mount();
-    else unmount();
+    state.enabled = enabled !== false;
+    applyVisibility();
   }
 
-  if (storage?.sync) {
-    storage.sync.get(DEFAULTS, (settings) => {
-      applyEnabled(settings.enabled !== false);
-    });
+  function applyOffDuty(offDuty) {
+    const wasOffDuty = state.offDuty;
+    state.offDuty = offDuty === true;
+    if (wasOffDuty && !state.offDuty) state.forceCommuteIn = true;
+    applyVisibility();
+  }
+
+  function applyActiveSurface(active) {
+    const nextActive = active === true;
+    if (state.activeSurface && !nextActive) persistActorSnapshot({ force: true });
+    state.activeSurface = nextActive;
+    if (nextActive) {
+      state.nextActorPersistAt = 0;
+      state.lastTickAt = performance.now();
+    }
+    applyVisibility();
+  }
+
+  function loadStartupSettings() {
+    let pending = 0;
+    const done = () => {
+      pending -= 1;
+      if (pending <= 0) {
+        state.settingsLoaded = true;
+        applyVisibility();
+      }
+    };
+
+    if (storage?.sync) {
+      pending += 1;
+      storage.sync.get(DEFAULTS, (settings) => {
+        state.enabled = settings.enabled !== false;
+        done();
+      });
+    }
+
+    if (storage?.local) {
+      pending += 1;
+      storage.local.get({ [OFF_DUTY_STORAGE_KEY]: false }, (settings) => {
+        state.offDuty = settings[OFF_DUTY_STORAGE_KEY] === true;
+        done();
+      });
+    }
+
+    if (pending === 0) {
+      state.settingsLoaded = true;
+      applyVisibility();
+    }
+  }
+
+  function requestActiveSurface() {
+    if (!runtime?.sendMessage) {
+      applyActiveSurface(document.visibilityState === 'visible' && document.hasFocus());
+      return;
+    }
+
+    try {
+      runtime.sendMessage({ type: READY_MESSAGE }, (response) => {
+        if (chrome.runtime.lastError) {
+          applyActiveSurface(document.visibilityState === 'visible' && document.hasFocus());
+          return;
+        }
+        applyActiveSurface(response?.active === true);
+      });
+    } catch {
+      applyActiveSurface(document.visibilityState === 'visible' && document.hasFocus());
+    }
+  }
+
+  if (storage) {
+    loadStartupSettings();
+    requestActiveSurface();
     storage.onChanged.addListener((changes, area) => {
       if (area === 'sync' && changes.enabled) {
         applyEnabled(changes.enabled.newValue !== false);
       }
+      if (area === 'local' && changes[OFF_DUTY_STORAGE_KEY]) {
+        applyOffDuty(changes[OFF_DUTY_STORAGE_KEY].newValue === true);
+      }
+      if (area === 'local' && changes[STUDY_STORAGE_KEY] && state.host) {
+        applyStudySession(changes[STUDY_STORAGE_KEY].newValue, {
+          showRestNotice: true,
+        });
+      }
     });
   } else {
+    state.settingsLoaded = true;
     applyEnabled(true);
+    requestActiveSurface();
   }
+
+  if (runtime?.onMessage) {
+    runtime.onMessage.addListener((message) => {
+      if (message?.type === ACTIVE_MESSAGE) applyActiveSurface(message.active === true);
+    });
+  }
+
+  window.addEventListener('pagehide', () => persistActorSnapshot({ force: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persistActorSnapshot({ force: true });
+    else requestActiveSurface();
+  });
 })();
