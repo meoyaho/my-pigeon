@@ -14,6 +14,10 @@ app.whenReady().then(() => {
     setClickThroughExceptRegion(overlayWin, isOverHitbox);
   });
 
+  ipcMain.on('feed-mode-active', (_event, isActive) => {
+    setClickThroughExceptRegion(overlayWin, isActive ? { x: 0, y: 0, width: 99999, height: 99999 } : false);
+  });
+
   overlayWin.webContents.once('did-finish-load', () => {
     overlayWin.webContents.send(IPC.COMMUTE_IN);
   });

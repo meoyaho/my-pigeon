@@ -6,6 +6,7 @@ const { pickCommuteInPhrase, pickCommuteOutPhrase } = require('./pigeon/phrases'
 const { IPC } = require('../electron/ipcChannels');
 const { MouseVelocityTracker, shouldScatter } = require('./interactions/mouseTracker');
 const { attachDragHandlers } = require('./interactions/dragHandler');
+const { FeedModeController } = require('./interactions/feedMode');
 
 // pixi.js 8.x moved Application setup to an async `init()` call; the constructor
 // no longer accepts renderer options synchronously (that path is deprecated and,
@@ -43,6 +44,31 @@ function getMainPigeon() {
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
     mainPigeon.update(deltaMs);
+  });
+
+  const feedMode = new FeedModeController();
+
+  window.pigeonBridge.on(IPC.FEED_TRIGGERED, () => {
+    feedMode.start();
+    document.body.style.cursor = 'crosshair';
+    window.pigeonBridge.send('feed-mode-active', true); // main makes whole window clickable
+  });
+
+  window.addEventListener('click', (e) => {
+    const point = feedMode.handleClick({ x: e.clientX, y: e.clientY });
+    if (point) {
+      document.body.style.cursor = 'default';
+      window.pigeonBridge.send('feed-mode-active', false);
+      window.pigeonBridge.send(IPC.FEED_PLACED, point); // consumed in Task 11
+    }
+  });
+
+  app.ticker.add(() => {
+    feedMode.tick(app.ticker.deltaMS);
+    if (!feedMode.isActive() && document.body.style.cursor === 'crosshair') {
+      document.body.style.cursor = 'default';
+      window.pigeonBridge.send('feed-mode-active', false);
+    }
   });
 
   const mouseTracker = new MouseVelocityTracker();
