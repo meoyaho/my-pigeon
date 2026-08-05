@@ -273,7 +273,8 @@ class Pigeon {
     this.flightDurationMs = durationMs;
     this.flightArriveState = arriveState || null;
     this.flightOnComplete = onComplete || null;
-    this._enterState(state); // also swaps in flyIn/flyOut frames via _syncSpriteAnimation()
+    this._enterState(state); // also swaps in flyIn/flyOut/walk frames via _syncSpriteAnimation()
+    this._applyFacing(this._animationForState(), this.flightTo.x - this.flightFrom.x);
   }
 
   scatterAwayFrom(point) {
@@ -282,6 +283,20 @@ class Pigeon {
     const mag = Math.sqrt(dx * dx + dy * dy) || 1;
     this.fleeDirection = { x: dx / mag, y: dy / mag };
     this._enterState(STATES.SCATTERING);
+    this._applyFacing('flyOut', this.fleeDirection.x);
+  }
+
+  // Each animation clip is a fixed photo/render, so it faces one direction
+  // regardless of where the pigeon is actually headed — 'walk' and 'idle'
+  // face left natively, 'flyIn'/'flyOut' face right. Mirrors the sprite
+  // horizontally (scale.x sign) so it visually faces the direction it's
+  // actually traveling. directionX === 0 (purely vertical/no movement)
+  // leaves the current facing untouched rather than guessing.
+  _applyFacing(animName, directionX) {
+    if (!this.sprite || !directionX) return;
+    const facesRightNatively = animName === 'flyIn' || animName === 'flyOut';
+    const wantsToFaceRight = directionX > 0;
+    this.sprite.scale.x = (wantsToFaceRight === facesRightNatively) ? 1 : -1;
   }
 
   maybeStartle(rng = Math.random, probability = 0.4) {

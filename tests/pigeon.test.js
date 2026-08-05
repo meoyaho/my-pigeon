@@ -85,7 +85,7 @@ test('flyTo enters arriveState and fires onComplete exactly once on arrival', ()
 test('flyTo swaps the sprite to flyIn/flyOut frames when a sprite is attached', () => {
   const spritesheet = { frames: { idle: ['idle1'], flyIn: ['fi1', 'fi2'], flyOut: ['fo1', 'fo2'] } };
   const p = new Pigeon(spritesheet, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
-  p.sprite = { textures: spritesheet.frames.idle, gotoAndPlay: jest.fn() };
+  p.sprite = { textures: spritesheet.frames.idle, gotoAndPlay: jest.fn(), scale: { x: 1, y: 1 } };
 
   p.flyTo({ x: 100, y: 100 }, 1000, { state: STATES.COMMUTE_IN });
   expect(p.sprite.textures).toBe(spritesheet.frames.flyIn);
@@ -98,7 +98,7 @@ test('flyTo swaps the sprite to flyIn/flyOut frames when a sprite is attached', 
 test('flyTo reverts the sprite to idle frames once COMMUTE_IN arrives at IDLE', () => {
   const spritesheet = { frames: { idle: ['idle1'], flyIn: ['fi1'] } };
   const p = new Pigeon(spritesheet, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
-  p.sprite = { textures: spritesheet.frames.idle, gotoAndPlay: jest.fn() };
+  p.sprite = { textures: spritesheet.frames.idle, gotoAndPlay: jest.fn(), scale: { x: 1, y: 1 } };
 
   p.flyTo({ x: 100, y: 100 }, 1000, { state: STATES.COMMUTE_IN, arriveState: STATES.IDLE });
   p.update(1000);
@@ -119,6 +119,7 @@ class MockAnimatedSprite {
   constructor(frames) {
     this.textures = frames;
     this.anchor = { set: () => {} };
+    this.scale = { x: 1, y: 1 };
     this.width = 100;
     this.height = 100;
   }
@@ -254,4 +255,36 @@ test('endDrag away from any corner walks to the nearest one instead of idling in
   const corners = [[50, 50], [750, 50], [50, 550], [750, 550]];
   const distances = corners.map(([cx, cy]) => Math.hypot(p.x - cx, p.y - cy));
   expect(Math.min(...distances)).toBeLessThan(5); // landed on some corner
+});
+
+test('walk sprite mirrors to face the direction it is actually walking (walk faces left natively)', () => {
+  const p = makeAttachedPigeon(400, 300);
+  p.flyTo({ x: 700, y: 300 }, 1000, { state: STATES.WALKING }); // moving right
+  expect(p.sprite.scale.x).toBe(-1); // walk's native art faces left, so moving right must mirror it
+
+  p.flyTo({ x: 100, y: 300 }, 1000, { state: STATES.WALKING }); // moving left
+  expect(p.sprite.scale.x).toBe(1); // native left-facing art, no mirror needed
+});
+
+test('flyIn/flyOut sprites face right natively, so moving right needs no mirror', () => {
+  const p = makeAttachedPigeon(0, 300);
+  p.flyTo({ x: 400, y: 300 }, 1000, { state: STATES.COMMUTE_IN }); // moving right
+  expect(p.sprite.scale.x).toBe(1); // flyIn already faces right — no mirror
+
+  p.flyTo({ x: 0, y: 300 }, 1000, { state: STATES.COMMUTE_OUT }); // moving left
+  expect(p.sprite.scale.x).toBe(-1); // flyOut faces right natively, moving left must mirror it
+});
+
+test('purely vertical movement (directionX === 0) leaves the current facing untouched', () => {
+  const p = makeAttachedPigeon(400, 100);
+  p.flyTo({ x: 700, y: 100 }, 1000, { state: STATES.WALKING }); // face right (mirrored)
+  expect(p.sprite.scale.x).toBe(-1);
+  p.flyTo({ x: 700, y: 500 }, 1000, { state: STATES.WALKING }); // same x, only y changes
+  expect(p.sprite.scale.x).toBe(-1); // unchanged, not reset to native
+});
+
+test('scatterAwayFrom mirrors flyOut to face the actual flee direction', () => {
+  const p = makeAttachedPigeon(400, 300);
+  p.scatterAwayFrom({ x: 500, y: 300 }); // cursor to the right -> flee left
+  expect(p.sprite.scale.x).toBe(-1); // flyOut faces right natively, fleeing left must mirror it
 });
