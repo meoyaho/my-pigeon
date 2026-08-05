@@ -36,17 +36,19 @@ function getMainPigeon() {
 
   const spritesheet = await buildPlaceholderSpritesheet(PIXI);
 
-  // Spawn off-screen at the left edge so COMMUTE_IN can fly it in to center —
-  // matches where the pigeon will actually start before the fly-in animation.
-  mainPigeon = new Pigeon(spritesheet, { x: -100, y: window.innerHeight / 2 }, {
+  // Spawn off-screen at the upper-left corner so COMMUTE_IN can fly it in to
+  // center — matches where the pigeon will actually start before fly-in.
+  const spawnX = -150;
+  const spawnY = -100;
+  mainPigeon = new Pigeon(spritesheet, { x: spawnX, y: spawnY }, {
     bounds: { width: window.innerWidth, height: window.innerHeight },
   });
   mainPigeon.attachSprite(PIXI, app.stage);
   // attachSprite() clamps to bounds on attach (so a pigeon dropped in mid-app
   // never spawns off-screen) — override that here since this specific spawn
   // is deliberately off-screen, waiting for the COMMUTE_IN fly-in.
-  mainPigeon.x = -100;
-  mainPigeon.y = window.innerHeight / 2;
+  mainPigeon.x = spawnX;
+  mainPigeon.y = spawnY;
   mainPigeon.sprite.x = mainPigeon.x;
   mainPigeon.sprite.y = mainPigeon.y;
 
@@ -148,8 +150,8 @@ function getMainPigeon() {
   window.pigeonBridge.on(IPC.COMMUTE_IN, () => {
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
-    // Fly in from the left edge (where the pigeon spawned) to screen center,
-    // then show the greeting bubble once it has actually arrived.
+    // Fly in from the upper-left corner (where the pigeon spawned) to screen
+    // center, then show the greeting bubble once it has actually arrived.
     mainPigeon.flyTo({ x: centerX, y: centerY }, 1200, {
       state: STATES.COMMUTE_IN,
       arriveState: STATES.IDLE,
@@ -167,7 +169,7 @@ function getMainPigeon() {
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
     // Move to center first, show the farewell bubble once arrived, hold it
-    // long enough to read, then fly off the right edge and quit.
+    // long enough to read, then fly off through the upper-right corner and quit.
     mainPigeon.flyTo({ x: centerX, y: centerY }, 700, {
       state: STATES.COMMUTE_OUT,
       onComplete: () => {
@@ -177,8 +179,9 @@ function getMainPigeon() {
           text: pickCommuteOutPhrase(),
         });
         setTimeout(() => {
-          const rightX = window.innerWidth + 150;
-          mainPigeon.flyTo({ x: rightX, y: mainPigeon.y }, 1000, {
+          const exitX = window.innerWidth + 150;
+          const exitY = -100;
+          mainPigeon.flyTo({ x: exitX, y: exitY }, 1000, {
             state: STATES.COMMUTE_OUT,
             onComplete: () => {
               window.pigeonBridge.send('commute-out-animation-done');
