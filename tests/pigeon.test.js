@@ -51,3 +51,33 @@ test('repeated SCATTERING bursts never push the pigeon past the bounds', () => {
   expect(p.x).toBeLessThanOrEqual(780);
   expect(p.x).toBeGreaterThanOrEqual(20);
 });
+
+test('flyTo interpolates x/y linearly toward the target over the flight duration', () => {
+  const p = new Pigeon(null, { x: 0, y: 100 }, { bounds: { width: 800, height: 600 } });
+  p.flyTo({ x: 100, y: 100 }, 1000, { state: STATES.COMMUTE_IN });
+  expect(p.getState()).toBe(STATES.COMMUTE_IN);
+  p.update(500); // halfway through the flight
+  expect(p.x).toBeCloseTo(50, 5);
+  expect(p.getState()).toBe(STATES.COMMUTE_IN); // not arrived yet
+});
+
+test('flyTo does not clamp to bounds even when the target is off-screen', () => {
+  const p = new Pigeon(null, { x: 400, y: 300 }, { bounds: { width: 800, height: 600 }, boundsMargin: 20 });
+  p.flyTo({ x: -100, y: 300 }, 1000, { state: STATES.COMMUTE_OUT });
+  p.update(1000); // full duration, arrives exactly at the off-screen target
+  expect(p.x).toBe(-100);
+});
+
+test('flyTo enters arriveState and fires onComplete exactly once on arrival', () => {
+  const onComplete = jest.fn();
+  const p = new Pigeon(null, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
+  p.flyTo({ x: 400, y: 300 }, 1000, { state: STATES.COMMUTE_IN, arriveState: STATES.IDLE, onComplete });
+  p.update(999);
+  expect(p.getState()).toBe(STATES.COMMUTE_IN);
+  expect(onComplete).not.toHaveBeenCalled();
+  p.update(1); // crosses the 1000ms threshold
+  expect(p.getState()).toBe(STATES.IDLE);
+  expect(onComplete).toHaveBeenCalledTimes(1);
+  p.update(1000); // further ticks in IDLE must not re-fire the flight callback
+  expect(onComplete).toHaveBeenCalledTimes(1);
+});

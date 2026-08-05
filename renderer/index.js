@@ -1,6 +1,7 @@
 const PIXI = require('pixi.js');
 const { buildPlaceholderSpritesheet } = require('./pigeon/spriteLoader');
 const { Pigeon } = require('./pigeon/Pigeon');
+const { STATES } = require('./pigeon/states');
 const { showMessageBubble } = require('./pigeon/messageBubble');
 const { pickCommuteInPhrase, pickCommuteOutPhrase } = require('./pigeon/phrases');
 const { IPC } = require('../electron/ipcChannels');
@@ -35,10 +36,19 @@ function getMainPigeon() {
 
   const spritesheet = await buildPlaceholderSpritesheet(PIXI);
 
-  mainPigeon = new Pigeon(spritesheet, { x: window.innerWidth / 2, y: window.innerHeight / 2 }, {
+  // Spawn off-screen at the left edge so COMMUTE_IN can fly it in to center —
+  // matches where the pigeon will actually start before the fly-in animation.
+  mainPigeon = new Pigeon(spritesheet, { x: -100, y: window.innerHeight / 2 }, {
     bounds: { width: window.innerWidth, height: window.innerHeight },
   });
   mainPigeon.attachSprite(PIXI, app.stage);
+  // attachSprite() clamps to bounds on attach (so a pigeon dropped in mid-app
+  // never spawns off-screen) — override that here since this specific spawn
+  // is deliberately off-screen, waiting for the COMMUTE_IN fly-in.
+  mainPigeon.x = -100;
+  mainPigeon.y = window.innerHeight / 2;
+  mainPigeon.sprite.x = mainPigeon.x;
+  mainPigeon.sprite.y = mainPigeon.y;
 
   attachDragHandlers(mainPigeon);
   mainPigeon.sprite.on('pointerover', () => window.pigeonBridge.send('cursor-over-hitbox', true));
@@ -136,22 +146,47 @@ function getMainPigeon() {
   });
 
   window.pigeonBridge.on(IPC.COMMUTE_IN, () => {
-    showMessageBubble(PIXI, app.stage, {
-      x: mainPigeon.sprite.x,
-      y: mainPigeon.sprite.y,
-      text: pickCommuteInPhrase(),
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    // Fly in from the left edge (where the pigeon spawned) to screen center,
+    // then show the greeting bubble once it has actually arrived.
+    mainPigeon.flyTo({ x: centerX, y: centerY }, 1200, {
+      state: STATES.COMMUTE_IN,
+      arriveState: STATES.IDLE,
+      onComplete: () => {
+        showMessageBubble(PIXI, app.stage, {
+          x: mainPigeon.sprite.x,
+          y: mainPigeon.sprite.y,
+          text: pickCommuteInPhrase(),
+        });
+      },
     });
   });
 
   window.pigeonBridge.on(IPC.COMMUTE_OUT, () => {
-    showMessageBubble(PIXI, app.stage, {
-      x: mainPigeon.sprite.x,
-      y: mainPigeon.sprite.y,
-      text: pickCommuteOutPhrase(),
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    // Move to center first, show the farewell bubble once arrived, hold it
+    // long enough to read, then fly off the right edge and quit.
+    mainPigeon.flyTo({ x: centerX, y: centerY }, 700, {
+      state: STATES.COMMUTE_OUT,
+      onComplete: () => {
+        showMessageBubble(PIXI, app.stage, {
+          x: mainPigeon.sprite.x,
+          y: mainPigeon.sprite.y,
+          text: pickCommuteOutPhrase(),
+        });
+        setTimeout(() => {
+          const rightX = window.innerWidth + 150;
+          mainPigeon.flyTo({ x: rightX, y: mainPigeon.y }, 1000, {
+            state: STATES.COMMUTE_OUT,
+            onComplete: () => {
+              window.pigeonBridge.send('commute-out-animation-done');
+            },
+          });
+        }, 2200); // let the bubble show before flying off
+      },
     });
-    setTimeout(() => {
-      window.pigeonBridge.send('commute-out-animation-done');
-    }, 3200); // let the bubble show before quitting
   });
 })();
 

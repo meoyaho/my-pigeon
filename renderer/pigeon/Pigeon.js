@@ -38,6 +38,26 @@ class Pigeon {
     this.stateElapsedMs += deltaMs;
     this.weirdBehaviorTimerMs += deltaMs;
 
+    // Handle COMMUTE_IN/COMMUTE_OUT flight (triggered externally via flyTo()).
+    // Linearly interpolates x/y from where flyTo() was called to the target
+    // over flightDurationMs; intentionally does NOT clampToBounds(), since
+    // fly-in/fly-out targets are deliberately off-screen.
+    if (this.state === STATES.COMMUTE_IN || this.state === STATES.COMMUTE_OUT) {
+      const t = Math.min(1, this.stateElapsedMs / this.flightDurationMs);
+      this.x = this.flightFrom.x + (this.flightTo.x - this.flightFrom.x) * t;
+      this.y = this.flightFrom.y + (this.flightTo.y - this.flightFrom.y) * t;
+      if (t >= 1) {
+        const onComplete = this.flightOnComplete;
+        this.flightOnComplete = null; // fire once
+        const arriveState = this.flightArriveState;
+        if (arriveState) {
+          this._enterState(arriveState);
+        }
+        if (onComplete) onComplete();
+      }
+      return;
+    }
+
     // Handle SCATTERING (highest priority — pre-empts everything else).
     if (this.state === STATES.SCATTERING) {
       const speed = 0.4; // px/ms placeholder movement speed
@@ -119,6 +139,23 @@ class Pigeon {
 
   endDrag() {
     this._enterState(STATES.IDLE);
+  }
+
+  // Starts a linear fly-to animation toward targetPoint, taking durationMs.
+  // state must be STATES.COMMUTE_IN or STATES.COMMUTE_OUT (the two states
+  // update() knows how to animate). arriveState, if given, is entered
+  // automatically once the flight completes (e.g. COMMUTE_IN -> IDLE, so the
+  // pigeon resumes normal life after landing). onComplete, if given, fires
+  // once — after arriveState has already been entered — letting the caller
+  // sequence follow-up steps (showing a speech bubble, starting a second
+  // flyTo, etc.) off of Pixi-side state that only the renderer knows about.
+  flyTo(targetPoint, durationMs, { state, arriveState, onComplete } = {}) {
+    this.flightFrom = { x: this.x, y: this.y };
+    this.flightTo = targetPoint;
+    this.flightDurationMs = durationMs;
+    this.flightArriveState = arriveState || null;
+    this.flightOnComplete = onComplete || null;
+    this._enterState(state);
   }
 
   scatterAwayFrom(point) {
