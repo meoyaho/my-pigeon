@@ -52,7 +52,6 @@ class Pigeon {
         const arriveState = this.flightArriveState;
         if (arriveState) {
           this._enterState(arriveState);
-          if (arriveState === STATES.IDLE) this._setSpriteAnimation('idle');
         }
         if (onComplete) onComplete();
       }
@@ -113,6 +112,42 @@ class Pigeon {
   _enterState(newState) {
     this.state = newState;
     this.stateElapsedMs = 0;
+    this._syncSpriteAnimation();
+  }
+
+  // Maps the current state to a spritesheet animation name. WEIRD_BEHAVIOR
+  // has no single fixed animation — it uses whichever behavior
+  // pickRandomWeirdBehavior() chose (currentWeirdBehavior is always set
+  // before _enterState(WEIRD_BEHAVIOR) is called). SCATTERING and
+  // FLYING_TO_FOOD have no dedicated art of their own, so they reuse the
+  // closest available flight clips (flyOut/flyIn) rather than freezing on
+  // the idle pose while airborne. Returns null for states with no visual
+  // change of their own (none currently, but kept as an explicit fallback).
+  _animationForState() {
+    switch (this.state) {
+      case STATES.IDLE: return 'idle';
+      case STATES.WALKING: return 'walk';
+      case STATES.WEIRD_BEHAVIOR: return this.currentWeirdBehavior;
+      case STATES.FLYING_TO_FOOD: return 'flyIn';
+      case STATES.EATING: return 'eat';
+      case STATES.SCATTERING: return 'flyOut';
+      case STATES.STARTLED: return 'startled';
+      case STATES.WEATHER_REACTION: return 'weatherHuddle';
+      case STATES.DRAGGED: return 'dragged';
+      case STATES.COMMUTE_IN: return 'flyIn';
+      case STATES.COMMUTE_OUT: return 'flyOut';
+      default: return null;
+    }
+  }
+
+  // Keeps the sprite's textures in sync with whatever _animationForState()
+  // says the current state should look like. Called automatically by
+  // _enterState(), so every transition (including ones triggered by Flock or
+  // dragHandler calling _enterState()/startDrag() directly) gets the right
+  // animation for free — no call site needs to remember to swap art itself.
+  _syncSpriteAnimation() {
+    const animName = this._animationForState();
+    if (animName) this._setSpriteAnimation(animName);
   }
 
   // Keeps x/y within opts.bounds (if set), so movement never drifts the
@@ -156,9 +191,7 @@ class Pigeon {
     this.flightDurationMs = durationMs;
     this.flightArriveState = arriveState || null;
     this.flightOnComplete = onComplete || null;
-    this._enterState(state);
-    if (state === STATES.COMMUTE_IN) this._setSpriteAnimation('flyIn');
-    else if (state === STATES.COMMUTE_OUT) this._setSpriteAnimation('flyOut');
+    this._enterState(state); // also swaps in flyIn/flyOut frames via _syncSpriteAnimation()
   }
 
   scatterAwayFrom(point) {
@@ -200,10 +233,16 @@ class Pigeon {
   }
 
   // Creates the AnimatedSprite. Called once after construction by flock.js.
-  // Along with _setSpriteAnimation() (used by flyTo() to swap in flyIn/flyOut
-  // frames), this is the only place that touches Pixi objects directly.
+  // Along with _setSpriteAnimation() (which every _enterState() call routes
+  // through), this is the only place that touches Pixi objects directly.
+  //
+  // Starts on whatever animation the pigeon's CURRENT state maps to, not
+  // always 'idle' — temporary pigeons are constructed already in EATING
+  // (flock.js calls _enterState(EATING) before attachSprite runs), so they
+  // must not flash an idle frame before their sprite exists.
   attachSprite(PIXI, container) {
-    const frames = this.spritesheet.frames.idle;
+    const initialAnim = this._animationForState() || 'idle';
+    const frames = this.spritesheet.frames[initialAnim] || this.spritesheet.frames.idle;
     this.sprite = new PIXI.AnimatedSprite(frames);
     // Center anchor: x/y is the sprite's midpoint, not its top-left corner.
     // Without this, clamping (and dragging) only guaranteed one corner of

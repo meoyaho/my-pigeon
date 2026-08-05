@@ -105,3 +105,101 @@ test('flyTo reverts the sprite to idle frames once COMMUTE_IN arrives at IDLE', 
   expect(p.getState()).toBe(STATES.IDLE);
   expect(p.sprite.textures).toBe(spritesheet.frames.idle);
 });
+
+const FULL_SPRITESHEET = {
+  frames: {
+    idle: ['idle1'], walk: ['walk1'], flipOver: ['fo1'], featherOnHead: ['foh1'],
+    oneLegDoze: ['old1'], courtshipCoo: ['cc1'], hopInPlace: ['hip1'],
+    flyIn: ['fi1'], flyOut: ['fout1'], eat: ['eat1'], startled: ['st1'],
+    weatherHuddle: ['wh1'], dragged: ['dr1'],
+  },
+};
+
+class MockAnimatedSprite {
+  constructor(frames) {
+    this.textures = frames;
+    this.anchor = { set: () => {} };
+    this.width = 100;
+    this.height = 100;
+  }
+  gotoAndPlay(frame) { this._frame = frame; }
+  play() {}
+}
+const MOCK_PIXI = { AnimatedSprite: MockAnimatedSprite };
+
+function makeAttachedPigeon(x = 0, y = 0, options = {}) {
+  const p = new Pigeon(FULL_SPRITESHEET, { x, y }, { bounds: { width: 800, height: 600 }, ...options });
+  p.attachSprite(MOCK_PIXI, { addChild() {} });
+  return p;
+}
+
+test('WALKING shows the walk animation', () => {
+  const p = makeAttachedPigeon(0, 0, { idleDurationMs: 100 });
+  p.update(150);
+  expect(p.getState()).toBe(STATES.WALKING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.walk);
+});
+
+test('EATING (entered externally by Flock) shows the eat animation', () => {
+  const p = makeAttachedPigeon();
+  p._enterState(STATES.EATING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.eat);
+});
+
+test('FLYING_TO_FOOD (entered externally by Flock.startFeeding) shows the flyIn animation', () => {
+  const p = makeAttachedPigeon();
+  p._enterState(STATES.FLYING_TO_FOOD);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.flyIn);
+});
+
+test('SCATTERING shows the flyOut animation', () => {
+  const p = makeAttachedPigeon();
+  p.scatterAwayFrom({ x: 10, y: 0 });
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.flyOut);
+});
+
+test('STARTLED shows the startled animation', () => {
+  const p = makeAttachedPigeon();
+  p.maybeStartle(() => 0, 1); // rng()=>0 < probability=1, always startles
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.startled);
+});
+
+test('WEATHER_REACTION shows the weatherHuddle animation', () => {
+  const p = makeAttachedPigeon();
+  p.setWeather('rain');
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.weatherHuddle);
+});
+
+test('DRAGGED shows the dragged animation', () => {
+  const p = makeAttachedPigeon();
+  p.startDrag();
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.dragged);
+});
+
+test('WEIRD_BEHAVIOR shows the specific behavior chosen, e.g. courtshipCoo', () => {
+  const p = new Pigeon(FULL_SPRITESHEET, { x: 0, y: 0 }, {
+    idleDurationMs: 1_000_000,
+    weirdBehaviorIntervalMs: 100,
+    rng: () => 0.6, // picks 'courtshipCoo' (index 3 of 5 behaviors)
+  });
+  p.attachSprite(
+    MOCK_PIXI,
+    { addChild() {} }
+  );
+  p.update(100);
+  expect(p.currentWeirdBehavior).toBe('courtshipCoo');
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.courtshipCoo);
+});
+
+test('a temporary pigeon spawned already in EATING shows the eat animation from its very first frame', () => {
+  // Mirrors Flock.js: _enterState(EATING) is called BEFORE attachSprite()
+  // runs, since the sprite doesn't exist until the renderer's ticker attaches
+  // it on a later tick.
+  const p = new Pigeon(FULL_SPRITESHEET, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
+  p._enterState(STATES.EATING); // sprite is null here — must not throw
+  p.attachSprite(
+    MOCK_PIXI,
+    { addChild() {} }
+  );
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.eat);
+});
