@@ -7,7 +7,7 @@ const DEFAULTS = {
   walkDurationMs: 2000,
   rng: Math.random,
   bounds: null, // { width, height } — no clamping by default (kept for existing tests)
-  boundsMargin: 20,
+  boundsMargin: 160, // fallback half-extent used only before a sprite is attached
 };
 
 class Pigeon {
@@ -98,12 +98,19 @@ class Pigeon {
   // pigeon off the visible screen. No-ops if bounds weren't provided —
   // used by SCATTERING's own movement and by any external code (Flock,
   // dragHandler) that sets x/y directly.
+  //
+  // x/y is the sprite's CENTER (attachSprite sets anchor to 0.5/0.5), so the
+  // margin must be half the sprite's actual width/height — otherwise only the
+  // anchor point stays on screen while the rest of a large photo cutout can
+  // still hang off the edge. Falls back to opts.boundsMargin before a sprite
+  // is attached (e.g. a freshly-spawned temporary pigeon).
   clampToBounds() {
     const bounds = this.opts.bounds;
     if (!bounds) return;
-    const margin = this.opts.boundsMargin;
-    this.x = Math.max(margin, Math.min(bounds.width - margin, this.x));
-    this.y = Math.max(margin, Math.min(bounds.height - margin, this.y));
+    const marginX = this.sprite ? this.sprite.width / 2 : this.opts.boundsMargin;
+    const marginY = this.sprite ? this.sprite.height / 2 : this.opts.boundsMargin;
+    this.x = Math.max(marginX, Math.min(bounds.width - marginX, this.x));
+    this.y = Math.max(marginY, Math.min(bounds.height - marginY, this.y));
   }
 
   startDrag() {
@@ -144,10 +151,16 @@ class Pigeon {
   attachSprite(PIXI, container) {
     const frames = this.spritesheet.frames.idle;
     this.sprite = new PIXI.AnimatedSprite(frames);
-    this.sprite.x = this.x;
-    this.sprite.y = this.y;
+    // Center anchor: x/y is the sprite's midpoint, not its top-left corner.
+    // Without this, clamping (and dragging) only guaranteed one corner of
+    // the photo cutout stayed on screen while the rest of the body — which
+    // can extend 100-200px further in any direction — hung off the edge.
+    this.sprite.anchor.set(0.5, 0.5);
     this.sprite.animationSpeed = 0.1;
     this.sprite.play();
+    this.clampToBounds(); // sprite.width/height now available for the margin
+    this.sprite.x = this.x;
+    this.sprite.y = this.y;
     container.addChild(this.sprite);
     return this.sprite;
   }
