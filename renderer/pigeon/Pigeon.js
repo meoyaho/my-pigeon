@@ -213,15 +213,39 @@ class Pigeon {
   }
 
   // x/y is the sprite's CENTER (attachSprite sets anchor to 0.5/0.5), so the
-  // safe margin from any edge must be half the sprite's actual width/height —
-  // otherwise only the anchor point stays on screen while the rest of a large
-  // photo cutout can still hang off the edge. Falls back to opts.boundsMargin
-  // before a sprite is attached (e.g. a freshly-spawned temporary pigeon).
+  // safe margin from any edge must be half the LARGEST frame across the
+  // *entire* spritesheet, not just whatever animation happens to be showing
+  // right now. Real photo-cutout frames vary a lot in size between clips
+  // (idle ~255x320, walk up to 416x157, courtshipCoo up to 320x293, ...) —
+  // a margin derived from the current frame (e.g. idle) doesn't guarantee
+  // the frame it's about to swap to (e.g. walk, much wider) stays on
+  // screen. Using one fixed max-frame margin for every clamp/corner
+  // calculation guarantees any frame fits, regardless of which is active
+  // when or after the calculation runs. Computed once and cached; falls
+  // back to opts.boundsMargin when no real texture dimensions are available
+  // (e.g. test spritesheets using plain placeholder values).
   _getMargins() {
-    return {
-      x: this.sprite ? this.sprite.width / 2 : this.opts.boundsMargin,
-      y: this.sprite ? this.sprite.height / 2 : this.opts.boundsMargin,
-    };
+    if (!this._cachedMargins) {
+      this._cachedMargins = this._computeMaxFrameMargins();
+    }
+    return this._cachedMargins;
+  }
+
+  _computeMaxFrameMargins() {
+    let maxWidth = 0;
+    let maxHeight = 0;
+    if (this.spritesheet && this.spritesheet.frames) {
+      for (const textures of Object.values(this.spritesheet.frames)) {
+        for (const texture of textures) {
+          if (texture && texture.width) maxWidth = Math.max(maxWidth, texture.width);
+          if (texture && texture.height) maxHeight = Math.max(maxHeight, texture.height);
+        }
+      }
+    }
+    if (maxWidth === 0 || maxHeight === 0) {
+      return { x: this.opts.boundsMargin, y: this.opts.boundsMargin };
+    }
+    return { x: maxWidth / 2, y: maxHeight / 2 };
   }
 
   // Keeps x/y within opts.bounds (if set), so movement never drifts the

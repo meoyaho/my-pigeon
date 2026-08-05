@@ -40,6 +40,22 @@ test('clampToBounds keeps x/y within [margin, size - margin] when bounds are set
   expect(p.y).toBe(580);
 });
 
+test('margin reflects the LARGEST frame across the whole spritesheet, not just the currently-shown one', () => {
+  // Mirrors the real bug: idle is small (100x100 here), but walk is much
+  // bigger (400x300) — a margin derived only from the current idle frame
+  // would let the wider/taller walk frame clip off-screen once it swaps in.
+  const spritesheet = {
+    frames: {
+      idle: [{ width: 100, height: 100 }],
+      walk: [{ width: 400, height: 300 }],
+    },
+  };
+  const p = new Pigeon(spritesheet, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
+  // Still showing idle (small) at this point — margin must already account
+  // for walk (bigger), computed from the whole spritesheet up front.
+  expect(p._getMargins()).toEqual({ x: 200, y: 150 });
+});
+
 test('repeated SCATTERING bursts never push the pigeon past the bounds', () => {
   const p = new Pigeon(null, { x: 780, y: 300 }, { bounds: { width: 800, height: 600 }, boundsMargin: 20 });
   // Flee straight toward the right edge, repeatedly, simulating rapid
@@ -106,12 +122,22 @@ test('flyTo reverts the sprite to idle frames once COMMUTE_IN arrives at IDLE', 
   expect(p.sprite.textures).toBe(spritesheet.frames.idle);
 });
 
+// Texture-like stand-ins (mirroring real PIXI.Texture's width/height) so
+// margin computation (_computeMaxFrameMargins, which scans every frame's
+// real dimensions) exercises the same code path as production. Uniform
+// 100x100 here keeps existing margin/corner-coordinate assertions (expecting
+// margin 50) unchanged — a separate test below covers genuinely mismatched
+// frame sizes.
+function tex(width = 100, height = 100) {
+  return { width, height };
+}
+
 const FULL_SPRITESHEET = {
   frames: {
-    idle: ['idle1'], walk: ['walk1'], flipOver: ['fo1'], featherOnHead: ['foh1'],
-    oneLegDoze: ['old1'], courtshipCoo: ['cc1'], hopInPlace: ['hip1'],
-    flyIn: ['fi1'], flyOut: ['fout1'], eat: ['eat1'], startled: ['st1'],
-    weatherHuddle: ['wh1'], dragged: ['dr1'],
+    idle: [tex()], walk: [tex()], flipOver: [tex()], featherOnHead: [tex()],
+    oneLegDoze: [tex()], courtshipCoo: [tex()], hopInPlace: [tex()],
+    flyIn: [tex()], flyOut: [tex()], eat: [tex()], startled: [tex()],
+    weatherHuddle: [tex()], dragged: [tex()],
   },
 };
 
