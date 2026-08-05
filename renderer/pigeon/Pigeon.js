@@ -58,10 +58,14 @@ class Pigeon {
       return;
     }
 
-    // Handle STARTLED (triggered externally via maybeStartle()).
+    // Handle STARTLED (triggered externally via maybeStartle()). After the
+    // startle, burst into flight (flyOut) to a random corner instead of just
+    // resuming IDLE in place — falls back to plain IDLE if bounds aren't
+    // known (no corner to flee to).
     if (this.state === STATES.STARTLED) {
       if (this.stateElapsedMs >= 1500) {
-        this._enterState(STATES.IDLE);
+        const fled = this._moveToRandomCorner(this.opts.fastWalkSpeed, STATES.FLEEING);
+        if (!fled) this._enterState(STATES.IDLE);
       }
       return;
     }
@@ -92,17 +96,18 @@ class Pigeon {
       return;
     }
 
-    // Handle COMMUTE_IN/COMMUTE_OUT/WALKING flight (triggered via flyTo()).
-    // Linearly interpolates x/y from where flyTo() was called to the target
-    // over flightDurationMs; intentionally does NOT clampToBounds(), since
-    // fly-in/fly-out targets are deliberately off-screen (WALKING's corner
-    // targets are always already in-bounds, so this is safe for it too — any
-    // point between two points inside a rectangle is itself inside it).
-    // Guarded on this.flightTo so a WALKING entered via the bounds-unknown
-    // fallback below (no flyTo call, so no flight data) isn't misread as an
-    // in-progress flight.
+    // Handle COMMUTE_IN/COMMUTE_OUT/WALKING/FLEEING flight (triggered via
+    // flyTo()). Linearly interpolates x/y from where flyTo() was called to
+    // the target over flightDurationMs; intentionally does NOT
+    // clampToBounds(), since fly-in/fly-out targets are deliberately
+    // off-screen (WALKING/FLEEING's corner targets are always already
+    // in-bounds, so this is safe for them too — any point between two points
+    // inside a rectangle is itself inside it). Guarded on this.flightTo so a
+    // WALKING entered via the bounds-unknown fallback below (no flyTo call,
+    // so no flight data) isn't misread as an in-progress flight.
     if (this.flightTo &&
-        (this.state === STATES.COMMUTE_IN || this.state === STATES.COMMUTE_OUT || this.state === STATES.WALKING)) {
+        (this.state === STATES.COMMUTE_IN || this.state === STATES.COMMUTE_OUT ||
+         this.state === STATES.WALKING || this.state === STATES.FLEEING)) {
       const t = Math.min(1, this.stateElapsedMs / this.flightDurationMs);
       this.x = this.flightFrom.x + (this.flightTo.x - this.flightFrom.x) * t;
       this.y = this.flightFrom.y + (this.flightTo.y - this.flightFrom.y) * t;
@@ -165,6 +170,7 @@ class Pigeon {
       case STATES.EATING: return 'eat';
       case STATES.SCATTERING: return 'flyOut';
       case STATES.STARTLED: return 'startled';
+      case STATES.FLEEING: return 'flyOut';
       case STATES.WEATHER_REACTION: return 'weatherHuddle';
       case STATES.DRAGGED: return 'dragged';
       case STATES.COMMUTE_IN: return 'flyIn';
@@ -248,6 +254,19 @@ class Pigeon {
     return choices[pickIndex];
   }
 
+  // Shared by walkToRandomCorner() (state: WALKING) and the post-STARTLED
+  // flee (state: FLEEING) — picks a random corner and flyTo()s there at
+  // speedPxPerMs, arriving back at IDLE. No-ops (returns false) if bounds
+  // aren't known. Returns true if a move was actually started.
+  _moveToRandomCorner(speedPxPerMs, state) {
+    const target = this._pickWalkTarget();
+    if (!target) return false;
+    const distance = Math.hypot(target.x - this.x, target.y - this.y);
+    const durationMs = Math.max(1, distance / speedPxPerMs);
+    this.flyTo(target, durationMs, { state, arriveState: STATES.IDLE });
+    return true;
+  }
+
   // Immediately beelines to a random corner at speedPxPerMs (default:
   // fastWalkSpeed, much quicker than the idle-timer-gated normal walk pace),
   // bypassing the idleDurationMs wait entirely. Used right after commute-in
@@ -255,12 +274,7 @@ class Pigeon {
   // screen for the full idle duration. No-ops (returns false) if bounds
   // aren't known. Returns true if a walk was actually started.
   walkToRandomCorner(speedPxPerMs = this.opts.fastWalkSpeed) {
-    const target = this._pickWalkTarget();
-    if (!target) return false;
-    const distance = Math.hypot(target.x - this.x, target.y - this.y);
-    const durationMs = Math.max(1, distance / speedPxPerMs);
-    this.flyTo(target, durationMs, { state: STATES.WALKING, arriveState: STATES.IDLE });
-    return true;
+    return this._moveToRandomCorner(speedPxPerMs, STATES.WALKING);
   }
 
   startDrag() {

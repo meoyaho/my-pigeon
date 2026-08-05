@@ -165,6 +165,35 @@ test('STARTLED shows the startled animation', () => {
   expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.startled);
 });
 
+test('after STARTLED wears off, the pigeon flees (FLEEING, flyOut animation) to a random corner', () => {
+  const p = makeAttachedPigeon(400, 300);
+  p.maybeStartle(() => 0, 1);
+  expect(p.getState()).toBe(STATES.STARTLED);
+  p.update(1500); // STARTLED duration elapses
+  expect(p.getState()).toBe(STATES.FLEEING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.flyOut);
+});
+
+test('FLEEING arrives back at IDLE at a corner, at fastWalkSpeed', () => {
+  const p = makeAttachedPigeon(400, 300, { fastWalkSpeed: 1000 });
+  p.maybeStartle(() => 0, 1);
+  p.update(1500); // enters FLEEING
+  expect(p.getState()).toBe(STATES.FLEEING);
+  p.update(10000); // fast speed — should arrive well within this
+  expect(p.getState()).toBe(STATES.IDLE);
+  const corners = [[50, 50], [750, 50], [50, 550], [750, 550]];
+  const distances = corners.map(([cx, cy]) => Math.hypot(p.x - cx, p.y - cy));
+  expect(Math.min(...distances)).toBeLessThan(5);
+});
+
+test('STARTLED falls back to plain IDLE (no FLEEING) when bounds are unknown', () => {
+  const p = new Pigeon(null, { x: 0, y: 0 });
+  p.maybeStartle(() => 0, 1);
+  expect(p.getState()).toBe(STATES.STARTLED);
+  p.update(1500);
+  expect(p.getState()).toBe(STATES.IDLE);
+});
+
 test('WEATHER_REACTION shows the weatherHuddle animation', () => {
   const p = makeAttachedPigeon();
   p.setWeather('rain');

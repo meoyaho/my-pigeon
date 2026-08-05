@@ -6,6 +6,7 @@ const STATES = {
   EATING: 'EATING',
   SCATTERING: 'SCATTERING',
   STARTLED: 'STARTLED',
+  FLEEING: 'FLEEING', // post-STARTLED flight to a random corner (flyOut animation)
   WEATHER_REACTION: 'WEATHER_REACTION',
   DRAGGED: 'DRAGGED',
   COMMUTE_IN: 'COMMUTE_IN',
