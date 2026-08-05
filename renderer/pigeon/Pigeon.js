@@ -1,7 +1,7 @@
 const { STATES, pickRandomWeirdBehavior } = require('./states');
 
 const DEFAULTS = {
-  idleDurationMs: 3000,
+  idleDurationMs: 10000, // how long it dwells at a corner before walking to another
   weirdBehaviorIntervalMs: 15000,
   weirdBehaviorDurationMs: 2500,
   walkDurationMs: 2000, // fallback-only: used when bounds are unknown, so no corner target exists
@@ -70,11 +70,11 @@ class Pigeon {
       return;
     }
 
-    // Interrupt IDLE or an in-progress corner-walk to trigger WEIRD_BEHAVIOR on
-    // interval. Checked before the flight/movement branch below so a weird
-    // behavior can genuinely interrupt a walk in progress, not just idling.
+    // Only trigger WEIRD_BEHAVIOR while genuinely IDLE (standing still), not
+    // mid-walk — a pigeon flipping over or cooing while striding toward a
+    // corner looked wrong. Checked before the flight/movement branch below.
     if (this.weirdBehaviorTimerMs >= this.opts.weirdBehaviorIntervalMs &&
-        (this.state === STATES.IDLE || this.state === STATES.WALKING)) {
+        this.state === STATES.IDLE) {
       this.currentWeirdBehavior = pickRandomWeirdBehavior(this.opts.rng);
       this.weirdBehaviorTimerMs = 0;
       this._enterState(STATES.WEIRD_BEHAVIOR);

@@ -288,3 +288,27 @@ test('scatterAwayFrom mirrors flyOut to face the actual flee direction', () => {
   p.scatterAwayFrom({ x: 500, y: 300 }); // cursor to the right -> flee left
   expect(p.sprite.scale.x).toBe(-1); // flyOut faces right natively, fleeing left must mirror it
 });
+
+test('WEIRD_BEHAVIOR no longer triggers while WALKING, only while genuinely IDLE', () => {
+  const p = makeAttachedPigeon(400, 300, {
+    idleDurationMs: 1_000_000, // never auto-walk during this test
+    weirdBehaviorIntervalMs: 100,
+    rng: () => 0,
+  });
+  p.flyTo({ x: 700, y: 300 }, 10_000, { state: STATES.WALKING }); // put it mid-walk
+  p.update(200); // past weirdBehaviorIntervalMs, but still mid-walk
+  expect(p.getState()).toBe(STATES.WALKING); // must NOT have been interrupted
+
+  p._enterState(STATES.IDLE);
+  p.weirdBehaviorTimerMs = 0;
+  p.update(200); // now genuinely idle — should trigger
+  expect(p.getState()).toBe(STATES.WEIRD_BEHAVIOR);
+});
+
+test('default idleDurationMs is 10s, so the pigeon dwells at a corner a while before walking again', () => {
+  const p = makeAttachedPigeon(50, 50, { rng: () => 0.9 }); // idleDurationMs left at its default
+  p.update(9999);
+  expect(p.getState()).toBe(STATES.IDLE); // not yet
+  p.update(2);
+  expect(p.getState()).toBe(STATES.WALKING); // just crossed 10s
+});
