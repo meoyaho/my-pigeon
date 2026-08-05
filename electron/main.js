@@ -113,7 +113,15 @@ if (gotSingleInstanceLock) {
       overlayWin.webContents.send(IPC.FEED_PLACED, point);
     });
 
-    overlayWin.webContents.once('did-finish-load', () => {
+    // NOT 'did-finish-load' — that fires as soon as the page's <script> tag
+    // returns (near-instant, since the renderer's async IIFE just starts and
+    // returns a promise). The renderer still has to await app.init() and
+    // sequentially load ~27 real sprite textures before it registers the
+    // COMMUTE_IN listener, so sending on did-finish-load raced ahead of that
+    // and was sent into the void — the pigeon just sat at its off-screen
+    // spawn point forever. Wait for the renderer's own explicit ready signal
+    // instead, sent once every listener (including COMMUTE_IN) is wired up.
+    ipcMain.once('renderer-ready', () => {
       overlayWin.webContents.send(IPC.COMMUTE_IN);
     });
 

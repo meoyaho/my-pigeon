@@ -188,6 +188,11 @@ function getMainPigeon() {
       },
     });
   });
+
+  // Tell main every listener above (especially COMMUTE_IN) is registered and
+  // ready to receive — sending COMMUTE_IN any earlier than this races ahead
+  // of app.init()/texture loading and gets lost.
+  window.pigeonBridge.send('renderer-ready');
 })();
 
 module.exports = { getMainPigeon };

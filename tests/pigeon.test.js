@@ -81,3 +81,27 @@ test('flyTo enters arriveState and fires onComplete exactly once on arrival', ()
   p.update(1000); // further ticks in IDLE must not re-fire the flight callback
   expect(onComplete).toHaveBeenCalledTimes(1);
 });
+
+test('flyTo swaps the sprite to flyIn/flyOut frames when a sprite is attached', () => {
+  const spritesheet = { frames: { idle: ['idle1'], flyIn: ['fi1', 'fi2'], flyOut: ['fo1', 'fo2'] } };
+  const p = new Pigeon(spritesheet, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
+  p.sprite = { textures: spritesheet.frames.idle, gotoAndPlay: jest.fn() };
+
+  p.flyTo({ x: 100, y: 100 }, 1000, { state: STATES.COMMUTE_IN });
+  expect(p.sprite.textures).toBe(spritesheet.frames.flyIn);
+  expect(p.sprite.gotoAndPlay).toHaveBeenCalledWith(0);
+
+  p.flyTo({ x: 0, y: 0 }, 1000, { state: STATES.COMMUTE_OUT });
+  expect(p.sprite.textures).toBe(spritesheet.frames.flyOut);
+});
+
+test('flyTo reverts the sprite to idle frames once COMMUTE_IN arrives at IDLE', () => {
+  const spritesheet = { frames: { idle: ['idle1'], flyIn: ['fi1'] } };
+  const p = new Pigeon(spritesheet, { x: 0, y: 0 }, { bounds: { width: 800, height: 600 } });
+  p.sprite = { textures: spritesheet.frames.idle, gotoAndPlay: jest.fn() };
+
+  p.flyTo({ x: 100, y: 100 }, 1000, { state: STATES.COMMUTE_IN, arriveState: STATES.IDLE });
+  p.update(1000);
+  expect(p.getState()).toBe(STATES.IDLE);
+  expect(p.sprite.textures).toBe(spritesheet.frames.idle);
+});

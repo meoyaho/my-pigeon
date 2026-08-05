@@ -52,6 +52,7 @@ class Pigeon {
         const arriveState = this.flightArriveState;
         if (arriveState) {
           this._enterState(arriveState);
+          if (arriveState === STATES.IDLE) this._setSpriteAnimation('idle');
         }
         if (onComplete) onComplete();
       }
@@ -156,6 +157,8 @@ class Pigeon {
     this.flightArriveState = arriveState || null;
     this.flightOnComplete = onComplete || null;
     this._enterState(state);
+    if (state === STATES.COMMUTE_IN) this._setSpriteAnimation('flyIn');
+    else if (state === STATES.COMMUTE_OUT) this._setSpriteAnimation('flyOut');
   }
 
   scatterAwayFrom(point) {
@@ -184,7 +187,21 @@ class Pigeon {
     }
   }
 
-  // The only method that touches Pixi. Called once after construction by flock.js.
+  // Swaps the AnimatedSprite's textures to a different animation slot from
+  // spritesheet.frames (e.g. 'flyIn', 'flyOut', 'idle') and restarts playback
+  // from frame 0. No-ops before a sprite is attached, or if the requested
+  // animation name doesn't exist in the loaded spritesheet.
+  _setSpriteAnimation(animName) {
+    if (!this.sprite) return;
+    const frames = this.spritesheet.frames[animName];
+    if (!frames) return;
+    this.sprite.textures = frames;
+    this.sprite.gotoAndPlay(0);
+  }
+
+  // Creates the AnimatedSprite. Called once after construction by flock.js.
+  // Along with _setSpriteAnimation() (used by flyTo() to swap in flyIn/flyOut
+  // frames), this is the only place that touches Pixi objects directly.
   attachSprite(PIXI, container) {
     const frames = this.spritesheet.frames.idle;
     this.sprite = new PIXI.AnimatedSprite(frames);
