@@ -33,7 +33,7 @@ function getMainPigeon() {
   document.body.appendChild(app.canvas);
   window.__pigeonApp = app;
 
-  const spritesheet = buildPlaceholderSpritesheet(PIXI, app.renderer);
+  const spritesheet = await buildPlaceholderSpritesheet(PIXI);
 
   mainPigeon = new Pigeon(spritesheet, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
   mainPigeon.attachSprite(PIXI, app.stage);
