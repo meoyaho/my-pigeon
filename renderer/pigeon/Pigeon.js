@@ -1,9 +1,14 @@
-const { STATES, pickRandomWeirdBehavior } = require('./states');
+const { STATES, pickRandomWeirdBehavior, WEIRD_BEHAVIORS } = require('./states');
 
 const DEFAULTS = {
-  idleDurationMs: 10000, // how long it dwells at a corner before walking to another
+  idleDurationMs: 25 * 60 * 1000, // how long it dwells at a corner before walking to another
   weirdBehaviorIntervalMs: 15000,
-  weirdBehaviorDurationMs: 2500,
+  weirdBehaviorDurationMs: 2500, // default duration for weird behaviors with no override below
+  weirdBehaviorDurationOverrides: {
+    oneLegDoze: 5 * 60 * 1000, // a genuine doze, not a quick gag — stays asleep much longer
+  },
+  animationSpeed: 0.1, // PIXI frames advanced per game-tick, default pace
+  weirdBehaviorAnimationSpeed: 0.04, // slower cadence specifically for the 5 weird behaviors
   walkDurationMs: 2000, // fallback-only: used when bounds are unknown, so no corner target exists
   walkSpeed: 0.06, // px/ms — real corner-to-corner walking pace once bounds are known
   cornerArrivalThreshold: 80, // px — how close to a corner counts as "already there" after a drag
@@ -61,8 +66,13 @@ class Pigeon {
     }
 
     // Handle WEIRD_BEHAVIOR exit (highest priority to prevent state layering).
+    // Some behaviors (oneLegDoze) run much longer than the rest — check
+    // weirdBehaviorDurationOverrides[currentWeirdBehavior] before falling
+    // back to the shared default.
     if (this.state === STATES.WEIRD_BEHAVIOR) {
-      if (this.stateElapsedMs >= this.opts.weirdBehaviorDurationMs) {
+      const duration = this.opts.weirdBehaviorDurationOverrides[this.currentWeirdBehavior]
+        ?? this.opts.weirdBehaviorDurationMs;
+      if (this.stateElapsedMs >= duration) {
         this.currentWeirdBehavior = null; // Clear stale behavior name
         this.weirdBehaviorTimerMs = 0; // Reset timer for next interval
         this._enterState(STATES.IDLE);
@@ -321,11 +331,18 @@ class Pigeon {
   // spritesheet.frames (e.g. 'flyIn', 'flyOut', 'idle') and restarts playback
   // from frame 0. No-ops before a sprite is attached, or if the requested
   // animation name doesn't exist in the loaded spritesheet.
+  //
+  // The 5 weird behaviors play at their own (slower) cadence via
+  // weirdBehaviorAnimationSpeed — everything else uses the shared
+  // animationSpeed default.
   _setSpriteAnimation(animName) {
     if (!this.sprite) return;
     const frames = this.spritesheet.frames[animName];
     if (!frames) return;
     this.sprite.textures = frames;
+    this.sprite.animationSpeed = WEIRD_BEHAVIORS.includes(animName)
+      ? this.opts.weirdBehaviorAnimationSpeed
+      : this.opts.animationSpeed;
     this.sprite.gotoAndPlay(0);
   }
 
@@ -346,7 +363,9 @@ class Pigeon {
     // the photo cutout stayed on screen while the rest of the body — which
     // can extend 100-200px further in any direction — hung off the edge.
     this.sprite.anchor.set(0.5, 0.5);
-    this.sprite.animationSpeed = 0.1;
+    this.sprite.animationSpeed = WEIRD_BEHAVIORS.includes(initialAnim)
+      ? this.opts.weirdBehaviorAnimationSpeed
+      : this.opts.animationSpeed;
     this.sprite.play();
     this.clampToBounds(); // sprite.width/height now available for the margin
     this.sprite.x = this.x;

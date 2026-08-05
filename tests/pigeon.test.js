@@ -305,10 +305,40 @@ test('WEIRD_BEHAVIOR no longer triggers while WALKING, only while genuinely IDLE
   expect(p.getState()).toBe(STATES.WEIRD_BEHAVIOR);
 });
 
-test('default idleDurationMs is 10s, so the pigeon dwells at a corner a while before walking again', () => {
-  const p = makeAttachedPigeon(50, 50, { rng: () => 0.9 }); // idleDurationMs left at its default
-  p.update(9999);
+test('default idleDurationMs is 25 minutes, so the pigeon dwells at a corner a long while before walking again', () => {
+  // idleDurationMs left at its default; weirdBehaviorIntervalMs pushed out so
+  // it doesn't fire first and mask the idle-duration threshold being tested.
+  const p = makeAttachedPigeon(50, 50, { rng: () => 0.9, weirdBehaviorIntervalMs: 1_000_000_000 });
+  const TWENTY_FIVE_MIN_MS = 25 * 60 * 1000;
+  p.update(TWENTY_FIVE_MIN_MS - 1);
   expect(p.getState()).toBe(STATES.IDLE); // not yet
-  p.update(2);
-  expect(p.getState()).toBe(STATES.WALKING); // just crossed 10s
+  p.update(1);
+  expect(p.getState()).toBe(STATES.WALKING); // just crossed 25 minutes
+});
+
+test('doze (oneLegDoze) lasts 5 minutes, far longer than the other weird behaviors', () => {
+  const p = makeAttachedPigeon(0, 0, {
+    idleDurationMs: 1_000_000,
+    weirdBehaviorIntervalMs: 100,
+    rng: () => 0.4, // picks 'oneLegDoze' (index 2 of 5 behaviors)
+  });
+  p.update(100);
+  expect(p.currentWeirdBehavior).toBe('oneLegDoze');
+  const FIVE_MIN_MS = 5 * 60 * 1000;
+  p.update(FIVE_MIN_MS - 1);
+  expect(p.getState()).toBe(STATES.WEIRD_BEHAVIOR); // still dozing
+  p.update(1);
+  expect(p.getState()).toBe(STATES.IDLE); // just crossed 5 minutes
+});
+
+test('weird-behavior animations play at a slower cadence than normal ones', () => {
+  const p = makeAttachedPigeon(0, 0, {
+    idleDurationMs: 1_000_000,
+    weirdBehaviorIntervalMs: 100,
+    rng: () => 0, // picks 'flipOver'
+  });
+  const normalSpeed = p.sprite.animationSpeed; // currently idle
+  p.update(100);
+  expect(p.getState()).toBe(STATES.WEIRD_BEHAVIOR);
+  expect(p.sprite.animationSpeed).toBeLessThan(normalSpeed);
 });
