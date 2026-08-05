@@ -26,13 +26,15 @@ class Pigeon {
   }
 
   update(deltaMs) {
-    this.stateElapsedMs += deltaMs;
-    this.weirdBehaviorTimerMs += deltaMs;
-
-    // Handle DRAGGED (highest priority — position is driven externally by dragHandler).
+    // Handle DRAGGED first, before any timer math — both stateElapsedMs and
+    // weirdBehaviorTimerMs must stay frozen for the entire drag so no timer
+    // fires immediately on release (endDrag() only resets stateElapsedMs).
     if (this.state === STATES.DRAGGED) {
       return; // position is driven externally by dragHandler while dragged
     }
+
+    this.stateElapsedMs += deltaMs;
+    this.weirdBehaviorTimerMs += deltaMs;
 
     // Handle SCATTERING (highest priority — pre-empts everything else).
     if (this.state === STATES.SCATTERING) {
