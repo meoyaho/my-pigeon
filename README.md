@@ -123,3 +123,29 @@ npm run dev
 ```bash
 npm test
 ```
+
+배포용 macOS 앱 빌드:
+
+```bash
+npm run build
+```
+
+빌드가 끝나면 `dist/`에 `.dmg`와 `.zip` 파일이 생성됩니다. GitHub Release에는 이 설치 파일을 업로드하면 됩니다. 앱 이름은 `My Pigeon`이고, 앱 아이콘은 `assets/icon.png`에서 생성됩니다.
+
+현재 빌드는 Apple Developer ID로 코드서명/노터라이즈되지 않은 빌드입니다. macOS에서 다운로드한 `.dmg`를 열 때 `손상되었기 때문에 열 수 없습니다` 같은 Gatekeeper 경고가 뜰 수 있습니다.
+
+내 Mac에서만 테스트할 때는 앱을 Applications로 옮긴 뒤 다음 명령으로 quarantine 속성을 제거할 수 있습니다.
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/My Pigeon.app"
+```
+
+다른 사람에게 자연스럽게 배포하려면 Apple Developer Program 인증서로 Developer ID 코드서명을 하고 Apple notarization까지 해야 합니다. 이 과정을 거친 `.dmg`를 GitHub Release에 올려야 macOS 사용자가 보안 경고 없이 받을 수 있습니다.
+
+배포용 Windows 앱 빌드:
+
+```bash
+npm run build:win
+```
+
+Windows 사용자는 같은 다운로드 페이지에 접속하면 됩니다. 최신 GitHub Release에 `.exe` 또는 Windows용 `.zip` 파일이 올라와 있으면 페이지가 Windows용 파일을 우선 연결합니다. macOS에서 Windows 앱을 빌드하려면 추가 도구가 필요할 수 있으니, 가장 쉬운 방법은 Windows 노트북에서 위 명령으로 빌드한 뒤 `dist/`의 `.exe` 파일을 GitHub Release에 업로드하는 것입니다.

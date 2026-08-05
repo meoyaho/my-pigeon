@@ -7,7 +7,7 @@ function createTray(onFeed, onCommuteOut) {
     { label: '먹이 주기', click: onFeed },
     { label: '퇴근', click: onCommuteOut },
   ]);
-  tray.setToolTip('비둘기 펫');
+  tray.setToolTip('My Pigeon');
   tray.setContextMenu(menu);
   return tray;
 }
