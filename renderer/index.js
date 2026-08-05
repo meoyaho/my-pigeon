@@ -174,10 +174,13 @@ function getMainPigeon() {
   window.pigeonBridge.on(IPC.COMMUTE_OUT, () => {
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
-    // Move to center first, show the farewell bubble once arrived, hold it
-    // long enough to read, then fly off through the upper-right corner and quit.
-    mainPigeon.flyTo({ x: centerX, y: centerY }, 700, {
-      state: STATES.COMMUTE_OUT,
+    // Walk to center first (not fly — the pigeon is already on the ground
+    // somewhere), show the farewell bubble once arrived, hold it long enough
+    // to read, then fly off through the upper-right corner and quit.
+    const distance = Math.hypot(centerX - mainPigeon.x, centerY - mainPigeon.y);
+    const walkDurationMs = Math.max(1, distance / mainPigeon.opts.walkSpeed);
+    mainPigeon.flyTo({ x: centerX, y: centerY }, walkDurationMs, {
+      state: STATES.WALKING,
       onComplete: () => {
         showMessageBubble(PIXI, app.stage, {
           x: mainPigeon.sprite.x,

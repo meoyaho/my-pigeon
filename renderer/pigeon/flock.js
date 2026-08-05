@@ -3,7 +3,7 @@ const { STATES } = require('./states');
 
 const MAX_TEMPORARY_PIGEONS = 8;
 const DEFAULTS = {
-  spawnStaggerMs: 500,
+  spawnStaggerMs: 150, // how soon each pigeon STARTS its arrival, not how fast it flies
   dispersalAfterMs: 6000, // how long the flock stays eating before dispersing
   rng: Math.random,
 };

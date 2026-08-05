@@ -61,13 +61,16 @@ function handleCommuteOut() {
   commuteOutTriggered = true;
   overlayWin.webContents.send(IPC.COMMUTE_OUT);
   // Fallback: if the renderer never responds with commute-out-animation-done
-  // (crashed, hung, etc.), still quit within ~6s so the user always has a way
-  // to close the app. The real commute-out choreography (move to center ~0.7s
-  // + bubble hold ~2.2s + fly out ~1s ≈ 3.9s) needs headroom under this, so
-  // don't shrink it without also shrinking that timeline. quitOnce() clears
-  // this timer if the normal path fires first, and app.quit() itself is safe
-  // to call more than once.
-  quitTimeout = setTimeout(() => quitOnce(), 6000);
+  // (crashed, hung, etc.), still quit eventually so the user always has a way
+  // to close the app. The real commute-out choreography now WALKS to center
+  // first (at the pigeon's normal walkSpeed, not a fast beeline), so its
+  // duration scales with however far the pigeon happens to be from center —
+  // on a large display that can legitimately take tens of seconds. This
+  // fallback is a true "something hung" safety net, not a tight bound on the
+  // normal flow, so it's generous (90s). quitOnce() clears this timer if the
+  // normal path fires first, and app.quit() itself is safe to call more than
+  // once.
+  quitTimeout = setTimeout(() => quitOnce(), 90000);
 }
 
 if (gotSingleInstanceLock) {
