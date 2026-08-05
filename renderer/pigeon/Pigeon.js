@@ -29,6 +29,17 @@ class Pigeon {
     this.stateElapsedMs += deltaMs;
     this.weirdBehaviorTimerMs += deltaMs;
 
+    // Handle SCATTERING (highest priority — pre-empts everything else).
+    if (this.state === STATES.SCATTERING) {
+      const speed = 0.4; // px/ms placeholder movement speed
+      this.x += this.fleeDirection.x * speed * deltaMs;
+      this.y += this.fleeDirection.y * speed * deltaMs;
+      if (this.stateElapsedMs >= 600) {
+        this._enterState(STATES.IDLE);
+      }
+      return;
+    }
+
     // Handle WEIRD_BEHAVIOR exit (highest priority to prevent state layering).
     if (this.state === STATES.WEIRD_BEHAVIOR) {
       if (this.stateElapsedMs >= this.opts.weirdBehaviorDurationMs) {
@@ -63,6 +74,14 @@ class Pigeon {
   _enterState(newState) {
     this.state = newState;
     this.stateElapsedMs = 0;
+  }
+
+  scatterAwayFrom(point) {
+    const dx = this.x - point.x;
+    const dy = this.y - point.y;
+    const mag = Math.sqrt(dx * dx + dy * dy) || 1;
+    this.fleeDirection = { x: dx / mag, y: dy / mag };
+    this._enterState(STATES.SCATTERING);
   }
 
   // The only method that touches Pixi. Called once after construction by flock.js.

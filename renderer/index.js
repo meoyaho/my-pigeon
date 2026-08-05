@@ -4,6 +4,7 @@ const { Pigeon } = require('./pigeon/Pigeon');
 const { showMessageBubble } = require('./pigeon/messageBubble');
 const { pickCommuteInPhrase, pickCommuteOutPhrase } = require('./pigeon/phrases');
 const { IPC } = require('../electron/ipcChannels');
+const { MouseVelocityTracker, shouldScatter } = require('./interactions/mouseTracker');
 
 // pixi.js 8.x moved Application setup to an async `init()` call; the constructor
 // no longer accepts renderer options synchronously (that path is deprecated and,
@@ -37,6 +38,15 @@ function getMainPigeon() {
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
     mainPigeon.update(deltaMs);
+  });
+
+  const mouseTracker = new MouseVelocityTracker();
+  window.addEventListener('mousemove', (e) => {
+    mouseTracker.recordSample({ x: e.clientX, y: e.clientY, tMs: performance.now() });
+    const velocity = mouseTracker.getVelocity();
+    if (shouldScatter(velocity)) {
+      mainPigeon.scatterAwayFrom({ x: e.clientX, y: e.clientY });
+    }
   });
 
   window.pigeonBridge.on(IPC.COMMUTE_IN, () => {
