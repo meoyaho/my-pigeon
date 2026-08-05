@@ -2,6 +2,7 @@ const { app, ipcMain } = require('electron');
 const { createOverlayWindow, setClickThroughExceptRegion } = require('./overlayWindow');
 const { createTray } = require('./tray');
 const { IPC } = require('./ipcChannels');
+const { startActiveWindowWatcher } = require('./activeWindowWatcher');
 
 let overlayWin;
 let tray;
@@ -9,6 +10,10 @@ let commuteOutTriggered = false;
 
 app.whenReady().then(() => {
   overlayWin = createOverlayWindow();
+
+  startActiveWindowWatcher(() => {
+    overlayWin.webContents.send(IPC.FOCUS_CHANGED);
+  });
 
   ipcMain.on('cursor-over-hitbox', (_event, isOverHitbox) => {
     setClickThroughExceptRegion(overlayWin, isOverHitbox);

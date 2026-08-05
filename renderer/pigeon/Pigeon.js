@@ -47,6 +47,14 @@ class Pigeon {
       return;
     }
 
+    // Handle STARTLED (triggered externally via maybeStartle()).
+    if (this.state === STATES.STARTLED) {
+      if (this.stateElapsedMs >= 1500) {
+        this._enterState(STATES.IDLE);
+      }
+      return;
+    }
+
     // Handle WEIRD_BEHAVIOR exit (highest priority to prevent state layering).
     if (this.state === STATES.WEIRD_BEHAVIOR) {
       if (this.stateElapsedMs >= this.opts.weirdBehaviorDurationMs) {
@@ -97,6 +105,13 @@ class Pigeon {
     const mag = Math.sqrt(dx * dx + dy * dy) || 1;
     this.fleeDirection = { x: dx / mag, y: dy / mag };
     this._enterState(STATES.SCATTERING);
+  }
+
+  maybeStartle(rng = Math.random, probability = 0.4) {
+    if (this.state === STATES.DRAGGED || this.state === STATES.SCATTERING) return;
+    if (rng() < probability) {
+      this._enterState(STATES.STARTLED);
+    }
   }
 
   // The only method that touches Pixi. Called once after construction by flock.js.

@@ -66,6 +66,11 @@ function getMainPigeon() {
     flock.startFeeding(point);
   });
 
+  window.pigeonBridge.on(IPC.FOCUS_CHANGED, () => {
+    mainPigeon.maybeStartle();
+    for (const pigeon of flock.getTemporaryPigeons()) pigeon.maybeStartle();
+  });
+
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
     feedMode.tick(deltaMs);
