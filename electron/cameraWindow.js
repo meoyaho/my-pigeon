@@ -14,6 +14,8 @@ function openCameraWindow() {
     resizable: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
+      contextIsolation: false,
+      nodeIntegration: true,
     },
   });
   cameraWin.loadFile(path.join(__dirname, '..', 'renderer', 'camera.html'));

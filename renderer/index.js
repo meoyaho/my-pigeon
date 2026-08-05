@@ -85,12 +85,24 @@ function getMainPigeon() {
     }
     flock.update(deltaMs);
 
+    // Sync sprite position from each pigeon's FSM-internal x/y — the FSM (e.g.
+    // Flock.startFeeding, SCATTERING) mutates x/y directly and never touches
+    // sprite.x/y itself, so without this the sprite would never actually move.
+    if (mainPigeon.sprite) {
+      mainPigeon.sprite.x = mainPigeon.x;
+      mainPigeon.sprite.y = mainPigeon.y;
+    }
+
     // Sync Pixi sprites for temporary pigeons with the flock's current list.
     const current = new Set(flock.getTemporaryPigeons());
     for (const pigeon of flock.getTemporaryPigeons()) {
       if (!temporarySprites.has(pigeon)) {
         pigeon.attachSprite(PIXI, app.stage);
         temporarySprites.set(pigeon, pigeon.sprite);
+      }
+      if (pigeon.sprite) {
+        pigeon.sprite.x = pigeon.x;
+        pigeon.sprite.y = pigeon.y;
       }
     }
     for (const [pigeon, sprite] of temporarySprites) {
@@ -108,6 +120,9 @@ function getMainPigeon() {
     const velocity = mouseTracker.getVelocity();
     if (shouldScatter(velocity)) {
       mainPigeon.scatterAwayFrom({ x: e.clientX, y: e.clientY });
+      for (const pigeon of flock.getTemporaryPigeons()) {
+        pigeon.scatterAwayFrom({ x: e.clientX, y: e.clientY });
+      }
     }
   });
 

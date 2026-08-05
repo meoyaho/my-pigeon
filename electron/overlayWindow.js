@@ -26,11 +26,12 @@ function createOverlayWindow() {
   return win;
 }
 
-// region: {x,y,width,height} in window-local coords, or null for fully click-through.
-// Electron has no native "click-through except a rect" primitive, so we approximate
-// it by toggling ignoreMouseEvents based on whether the last known cursor position
-// (tracked in the renderer via mousemove and reported over IPC) is inside `region`.
-// This function only performs the toggle; callers decide when to invoke it.
+// insideRegion: boolean. true = at least one interactive condition holds (cursor is
+// over the pigeon's hitbox, and/or feed-placement mode is active), so mouse events
+// should be captured by the window. false = fully click-through, so events pass to
+// whatever desktop app is beneath the overlay. Callers (main.js) OR together every
+// boolean input that wants to claim clicks and pass the combined result here; this
+// function only performs the toggle, it does no arbitration itself.
 function setClickThroughExceptRegion(win, insideRegion) {
   win.setIgnoreMouseEvents(!insideRegion, { forward: true });
 }

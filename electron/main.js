@@ -10,6 +10,21 @@ const { openCameraWindow } = require('./cameraWindow');
 let overlayWin;
 let tray;
 let commuteOutTriggered = false;
+let quitTimeout = null;
+let cursorOverHitbox = false;
+let feedModeActive = false;
+
+function updateClickThrough() {
+  setClickThroughExceptRegion(overlayWin, cursorOverHitbox || feedModeActive);
+}
+
+function quitOnce() {
+  if (quitTimeout) {
+    clearTimeout(quitTimeout);
+    quitTimeout = null;
+  }
+  app.quit();
+}
 
 app.whenReady().then(() => {
   overlayWin = createOverlayWindow();
@@ -23,18 +38,24 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('cursor-over-hitbox', (_event, isOverHitbox) => {
-    setClickThroughExceptRegion(overlayWin, isOverHitbox);
+    cursorOverHitbox = isOverHitbox;
+    updateClickThrough();
   });
 
   ipcMain.on('feed-mode-active', (_event, isActive) => {
-    setClickThroughExceptRegion(overlayWin, isActive ? { x: 0, y: 0, width: 99999, height: 99999 } : false);
+    feedModeActive = isActive;
+    updateClickThrough();
+  });
+
+  ipcMain.on(IPC.FEED_PLACED, (_event, point) => {
+    overlayWin.webContents.send(IPC.FEED_PLACED, point);
   });
 
   overlayWin.webContents.once('did-finish-load', () => {
     overlayWin.webContents.send(IPC.COMMUTE_IN);
   });
 
-  ipcMain.once('commute-out-animation-done', () => app.quit());
+  ipcMain.once('commute-out-animation-done', () => quitOnce());
 
   ipcMain.handle('save-photo', async (_event, dataUrl) => {
     const { filePath } = await dialog.showSaveDialog({
@@ -54,6 +75,11 @@ app.whenReady().then(() => {
       if (commuteOutTriggered) return;
       commuteOutTriggered = true;
       overlayWin.webContents.send(IPC.COMMUTE_OUT);
+      // Fallback: if the renderer never responds with commute-out-animation-done
+      // (crashed, hung, etc.), still quit within ~4s so the user always has a way
+      // to close the app via the tray. quitOnce() clears this timer if the normal
+      // path fires first, and app.quit() itself is safe to call more than once.
+      quitTimeout = setTimeout(() => quitOnce(), 4000);
     }
   );
 });
