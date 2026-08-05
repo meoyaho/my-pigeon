@@ -62,13 +62,18 @@ class Pigeon {
     this.weirdBehaviorTimerMs += deltaMs;
 
     // Handle SCATTERING (highest priority — pre-empts everything else).
+    // After the initial dodge, keep going all the way to a corner (like
+    // STARTLED's post-fright flight) instead of just settling into IDLE
+    // wherever the dodge happened to end — a pigeon that just got shooed
+    // away from a food pile wouldn't just stand there next to it.
     if (this.state === STATES.SCATTERING) {
       const speed = 0.4; // px/ms placeholder movement speed
       this.x += this.fleeDirection.x * speed * deltaMs;
       this.y += this.fleeDirection.y * speed * deltaMs;
       this.clampToBounds();
       if (this.stateElapsedMs >= 600) {
-        this._enterState(STATES.IDLE);
+        const fled = this._moveToRandomCorner(this.opts.fastWalkSpeed, STATES.FLEEING);
+        if (!fled) this._enterState(STATES.IDLE);
       }
       return;
     }

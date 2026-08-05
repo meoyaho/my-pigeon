@@ -62,7 +62,7 @@ test('repeated SCATTERING bursts never push the pigeon past the bounds', () => {
   // real-world 훠이훠이 triggers that used to drift the pigeon off-screen.
   for (let i = 0; i < 20; i++) {
     p.scatterAwayFrom({ x: p.x - 10, y: p.y });
-    p.update(600); // full scatter burst duration, resolves back to IDLE
+    p.update(600); // full scatter burst duration, then starts heading for a corner
   }
   expect(p.x).toBeLessThanOrEqual(780);
   expect(p.x).toBeGreaterThanOrEqual(20);
@@ -183,6 +183,13 @@ test('SCATTERING shows the flyOut animation', () => {
   const p = makeAttachedPigeon();
   p.scatterAwayFrom({ x: 10, y: 0 });
   expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.flyOut);
+});
+
+test('after a scatter burst resolves, the pigeon heads to a corner instead of idling in place', () => {
+  const p = new Pigeon(null, { x: 400, y: 300 }, { bounds: { width: 800, height: 600 } });
+  p.scatterAwayFrom({ x: p.x - 10, y: p.y }); // flee to the right
+  p.update(600); // full scatter burst duration
+  expect(p.getState()).toBe(STATES.FLEEING);
 });
 
 test('STARTLED shows the startled animation', () => {
