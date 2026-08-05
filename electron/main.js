@@ -4,6 +4,8 @@ const { createTray } = require('./tray');
 const { IPC } = require('./ipcChannels');
 
 let overlayWin;
+let tray;
+let commuteOutTriggered = false;
 
 app.whenReady().then(() => {
   overlayWin = createOverlayWindow();
@@ -16,12 +18,15 @@ app.whenReady().then(() => {
     overlayWin.webContents.send(IPC.COMMUTE_IN);
   });
 
-  createTray(
+  ipcMain.once('commute-out-animation-done', () => app.quit());
+
+  tray = createTray(
     () => overlayWin.webContents.send(IPC.FEED_TRIGGERED),
     () => { /* wired in Task 12 */ },
     () => {
+      if (commuteOutTriggered) return;
+      commuteOutTriggered = true;
       overlayWin.webContents.send(IPC.COMMUTE_OUT);
-      ipcMain.once('commute-out-animation-done', () => app.quit());
     }
   );
 });
