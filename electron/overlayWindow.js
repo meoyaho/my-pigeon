@@ -16,7 +16,8 @@ function createOverlayWindow() {
     skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
-      contextIsolation: true,
+      contextIsolation: false,
+      nodeIntegration: true,
     },
   });
   win.setAlwaysOnTop(true, 'screen-saver');
