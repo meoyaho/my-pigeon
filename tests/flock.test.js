@@ -45,3 +45,77 @@ test('temporary pigeons are removed after they finish dispersing', () => {
   flock.update(600); // past dispersalAfterMs
   expect(flock.getTemporaryPigeons().length).toBe(0);
 });
+
+function makeMainWithBounds(options = {}) {
+  return new Pigeon(null, { x: 0, y: 0 }, {
+    bounds: { width: 800, height: 600 },
+    fastWalkSpeed: 1000, // fast enough that flights resolve within a test's update() calls
+    ...options,
+  });
+}
+
+test('startFeeding flies the main pigeon to the food point instead of teleporting (bounds known)', () => {
+  const main = makeMainWithBounds();
+  const flock = new Flock(main);
+  flock.startFeeding({ x: 700, y: 500 });
+  expect(main.getState()).toBe(STATES.FLYING_TO_FOOD);
+  expect(main.x).toBe(0); // hasn't teleported — still mid-flight from its starting position
+  flock.update(10000); // fast speed — arrives well within this
+  expect(main.getState()).toBe(STATES.EATING);
+  expect(main.x).toBeCloseTo(700, 0);
+  expect(main.y).toBeCloseTo(500, 0);
+});
+
+test('temporary pigeons fly in from off-screen (bounds known), not materialize already at the food', () => {
+  const main = makeMainWithBounds();
+  const flock = new Flock(main, { spawnStaggerMs: 100 });
+  flock.startFeeding({ x: 400, y: 300 });
+  flock.update(150); // triggers the first spawn
+  const [first] = flock.getTemporaryPigeons();
+  expect(first.getState()).toBe(STATES.FLYING_TO_FOOD);
+  // Spawned far from its eventual eating spot (off-screen), not already there.
+  expect(Math.hypot(first.x - 400, first.y - 300)).toBeGreaterThan(200);
+});
+
+test('temporary pigeons spawn from different positions (different arrival directions)', () => {
+  let call = 0;
+  const rng = () => { call += 1; return (call % 5) / 5; }; // cycles through several angles
+  const main = makeMainWithBounds({ rng });
+  const flock = new Flock(main, { spawnStaggerMs: 100, rng });
+  flock.startFeeding({ x: 400, y: 300 });
+  for (let i = 0; i < 3; i++) flock.update(150);
+  const positions = flock.getTemporaryPigeons().map((p) => `${Math.round(p.x)},${Math.round(p.y)}`);
+  expect(new Set(positions).size).toBe(positions.length); // all distinct spawn points
+});
+
+test('disperseAll sends the whole temporary flock away (FLEEING) and ends the feeding session', () => {
+  const main = makeMainWithBounds();
+  const flock = new Flock(main, { spawnStaggerMs: 100 });
+  flock.startFeeding({ x: 400, y: 300 });
+  for (let i = 0; i < 8; i++) flock.update(150);
+  expect(flock.getTemporaryPigeons().length).toBe(8);
+
+  flock.disperseAll();
+  expect(flock.feeding).toBe(false);
+  for (const pigeon of flock.getTemporaryPigeons()) {
+    expect(pigeon.getState()).toBe(STATES.FLEEING);
+  }
+});
+
+test('disperseAll removes each temporary pigeon once it actually finishes leaving, so only the main pigeon remains', () => {
+  const main = makeMainWithBounds();
+  const flock = new Flock(main, { spawnStaggerMs: 100 });
+  flock.startFeeding({ x: 400, y: 300 });
+  for (let i = 0; i < 8; i++) flock.update(150);
+  expect(flock.getTemporaryPigeons().length).toBe(8);
+
+  flock.disperseAll();
+  flock.update(10000); // fast speed — all should have finished leaving
+  expect(flock.getTemporaryPigeons().length).toBe(0);
+});
+
+test('disperseAll with no active feeding session is a harmless no-op', () => {
+  const flock = new Flock(makeMainWithBounds());
+  expect(() => flock.disperseAll()).not.toThrow();
+  expect(flock.getTemporaryPigeons().length).toBe(0);
+});

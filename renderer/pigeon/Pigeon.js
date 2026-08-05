@@ -96,18 +96,17 @@ class Pigeon {
       return;
     }
 
-    // Handle COMMUTE_IN/COMMUTE_OUT/WALKING/FLEEING flight (triggered via
-    // flyTo()). Linearly interpolates x/y from where flyTo() was called to
-    // the target over flightDurationMs; intentionally does NOT
+    // Handle COMMUTE_IN/COMMUTE_OUT/WALKING/FLEEING/FLYING_TO_FOOD flight
+    // (triggered via flyTo()). Linearly interpolates x/y from where flyTo()
+    // was called to the target over flightDurationMs; intentionally does NOT
     // clampToBounds(), since fly-in/fly-out targets are deliberately
-    // off-screen (WALKING/FLEEING's corner targets are always already
-    // in-bounds, so this is safe for them too — any point between two points
-    // inside a rectangle is itself inside it). Guarded on this.flightTo so a
-    // WALKING entered via the bounds-unknown fallback below (no flyTo call,
-    // so no flight data) isn't misread as an in-progress flight.
-    if (this.flightTo &&
-        (this.state === STATES.COMMUTE_IN || this.state === STATES.COMMUTE_OUT ||
-         this.state === STATES.WALKING || this.state === STATES.FLEEING)) {
+    // off-screen (WALKING/FLEEING/FLYING_TO_FOOD's targets are always
+    // already in-bounds, so this is safe for them too — any point between
+    // two points inside a rectangle is itself inside it). Guarded on
+    // this.flightTo so a WALKING entered via the bounds-unknown fallback
+    // below (no flyTo call, so no flight data) isn't misread as an
+    // in-progress flight.
+    if (this.flightTo && this._isFlightState(this.state)) {
       const t = Math.min(1, this.stateElapsedMs / this.flightDurationMs);
       this.x = this.flightFrom.x + (this.flightTo.x - this.flightFrom.x) * t;
       this.y = this.flightFrom.y + (this.flightTo.y - this.flightFrom.y) * t;
@@ -151,6 +150,16 @@ class Pigeon {
     this.state = newState;
     this.stateElapsedMs = 0;
     this._syncSpriteAnimation();
+  }
+
+  // States whose x/y is driven by an in-progress flyTo() flight rather than
+  // update()'s other per-tick logic. Shared by the movement-interpolation
+  // branch in update() and attachSprite()'s clamp-skip check below, so a
+  // pigeon spawned or attached mid-flight isn't snapped back on-screen by
+  // clampToBounds() before it has a chance to visibly fly in.
+  _isFlightState(state) {
+    return state === STATES.COMMUTE_IN || state === STATES.COMMUTE_OUT ||
+      state === STATES.WALKING || state === STATES.FLEEING || state === STATES.FLYING_TO_FOOD;
   }
 
   // Maps the current state to a spritesheet animation name. WEIRD_BEHAVIOR
@@ -397,7 +406,12 @@ class Pigeon {
       ? this.opts.weirdBehaviorAnimationSpeed
       : this.opts.animationSpeed;
     this.sprite.play();
-    this.clampToBounds(); // sprite.width/height now available for the margin
+    // Skip the auto-clamp while mid-flight (e.g. a temporary pigeon spawned
+    // off-screen, about to fly in) — clamping here would snap it back
+    // on-screen instantly, before it ever gets to visibly fly in.
+    if (!(this.flightTo && this._isFlightState(this.state))) {
+      this.clampToBounds(); // sprite.width/height now available for the margin
+    }
     this.sprite.x = this.x;
     this.sprite.y = this.y;
     container.addChild(this.sprite);
