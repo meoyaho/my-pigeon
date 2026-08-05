@@ -1,151 +1,50 @@
-# Desktop Pigeon Pet
+# My Pigeon
 
-Electron으로 만든 데스크톱 비둘기 펫 앱입니다. 실행하면 투명 오버레이 위에 비둘기가 뜨고, 메뉴바/tray 메뉴에서 먹이 주기, 퇴근을 할 수 있습니다.
+Chrome 웹페이지 안에서 돌아다니는 비둘기 확장 프로그램입니다. 비둘기는 페이지 위를 걷고, 뛰고, 날아오고, 먹이를 먹고, 우클릭 메뉴로 퇴근할 수 있습니다.
 
-## 처음 실행하기
+## Chrome에서 가볍게 써보기
 
-현재 이 repo는 아직 배포용 앱이 아니라 개발용 소스코드입니다. 그래서 처음 실행하는 사람도 Node.js와 npm을 설치한 뒤 Terminal에서 실행해야 합니다.
+1. Chrome 주소창에 `chrome://extensions`를 입력합니다.
+2. 오른쪽 위의 `개발자 모드`를 켭니다.
+3. `압축해제된 확장 프로그램을 로드`를 누릅니다.
+4. 이 repo의 `extension/` 폴더를 선택합니다.
+5. 이미 열려 있던 웹페이지는 새로고침합니다.
 
-1. Node.js 20 LTS 이상을 설치합니다: <https://nodejs.org/>
-2. Terminal을 엽니다.
-3. 프로젝트 폴더로 이동합니다.
+Chrome 툴바의 `My Pigeon` 아이콘을 누르면 비둘기를 켜거나 끌 수 있습니다. 비둘기는 일반 웹페이지 위에서 움직이고 드래그할 수 있지만, `chrome://` 같은 브라우저 내부 페이지나 Chrome 밖의 데스크톱 앱 위에는 올라갈 수 없습니다.
 
-```bash
-cd /Users/jisuryou/my-pigeon
-```
+비둘기를 우클릭하면 확장 프로그램용 메뉴가 열립니다.
 
-4. 의존성을 한 번 설치합니다.
+- `먹이 주기`: 페이지 위에 먹이를 놓으면 여러 비둘기가 화면 밖에서 몰려와 먹습니다.
+- `퇴근`: 비둘기가 중앙으로 온 뒤 화면 밖으로 나가고, 현재 페이지에서 사라집니다.
 
-```bash
-npm install
-```
+호버는 별도의 표정/문구 변화 없이 포인터 판정만 합니다.
 
-5. 앱을 실행합니다.
+Idle 상태의 비둘기가 있는 화면 구석에 드래그 가능한 이미지가 있으면, 그 이미지를 복제해서 머리 위에 올리고 다닙니다. 페이지의 이미지를 idle 상태의 비둘기 위로 직접 드래그해도 같은 방식으로 머리 위에 올릴 수 있습니다. 걷거나 뛰는 동안에는 유지되고, 이상행동이나 startled/fly/eat 같은 다른 상태로 바뀌면 떨어집니다.
 
-```bash
-npm start
-```
+## 안 보일 때
 
-앱이 실행되면 데스크톱 위에 비둘기가 뜹니다. 메뉴바/tray의 `비둘기 펫` 메뉴에서 다음 기능을 사용할 수 있습니다.
+- `chrome://extensions`, 새 탭, Chrome Web Store에서는 뜨지 않습니다.
+- `https://example.com` 같은 일반 웹페이지에서 새로고침해봅니다.
+- `chrome://extensions`에서 `My Pigeon` 카드의 새로고침 아이콘을 누른 뒤, 웹페이지도 다시 새로고침합니다.
+- `My Pigeon` 카드의 `세부정보`에서 `사이트 액세스`가 `모든 사이트에서`로 되어 있는지 확인합니다.
+- Chrome 툴바의 `My Pigeon` 아이콘을 눌러 토글이 켜져 있는지 확인합니다.
+- 로컬 `file://` 페이지에서 테스트하려면 `My Pigeon` 카드의 `세부정보`에서 `파일 URL에 대한 액세스 허용`을 켭니다.
 
-- `먹이 주기`: 비둘기 먹이 놓기
-- `퇴근`: 퇴근 애니메이션 후 앱 종료
+## GitHub Pages
 
-## nvm을 쓰는 경우
+GitHub Pages 페이지는 `docs/` 루트에 있습니다.
 
-`nvm`을 쓰고 있다면 이 repo의 `.nvmrc`를 사용해서 Node 버전을 맞출 수 있습니다.
+1. GitHub 저장소의 `Settings` -> `Pages`로 이동합니다.
+2. `Source`를 `Deploy from a branch`로 설정합니다.
+3. `Branch`는 `main`, 폴더는 `/docs`로 선택하고 저장합니다.
+4. `main` 브랜치에 push하면 `https://meoyaho.github.io/my-pigeon/`에 배포됩니다.
 
-```bash
-nvm install
-nvm use
-npm install
-npm start
-```
+현재 Pages 화면은 비둘기 이미지를 보여주고, 클릭하면 이 README의 Chrome 확장 프로그램 설치 안내로 이동합니다. Chrome 정책상 웹사이트에서 임의의 확장 프로그램을 직접 설치시키는 방식은 제한되어 있어서, 자연스럽게 배포하려면 나중에 Chrome Web Store 등록 링크를 연결하는 방식이 가장 깔끔합니다.
 
-## 실행 전 점검
+## 개발 확인
 
-앱이 실행되지 않으면 먼저 이 명령을 실행합니다.
-
-```bash
-npm run doctor
-```
-
-`doctor`는 Node.js 버전, 의존성 설치 여부, 필요한 앱 파일이 있는지 확인합니다. `FAIL`이 나오면 그 아래에 적힌 안내를 따르면 됩니다.
-
-## 자주 막히는 부분
-
-`Node.js >= 20`에서 실패하면 Node.js 버전이 낮은 상태입니다. Node.js 20 LTS 이상으로 바꾼 뒤 다시 실행합니다.
-
-`electron: command not found`가 나오면 의존성이 아직 설치되지 않은 상태입니다.
+확장 프로그램은 별도 빌드가 필요 없습니다. 문법 확인은 다음 명령으로 할 수 있습니다.
 
 ```bash
-npm install
+npm run check
 ```
-
-macOS에서 앱은 켜졌는데 활성 창 반응 같은 일부 기능이 동작하지 않으면, 시스템 설정의 개인정보 보호 권한에서 Terminal 또는 앱 권한을 허용해야 할 수 있습니다. 이 권한이 없어도 기본 비둘기 오버레이는 동작합니다.
-
-실행했는데 앱을 찾기 어렵다면 macOS 메뉴바 또는 Windows/Linux tray 영역에서 `비둘기 펫` 항목을 찾습니다.
-
-## 개발자가 아닌 테스터에게 공유하려면
-
-Terminal을 쓰지 않는 사람에게 가장 쉬운 방식은 macOS `.app` 또는 `.dmg` 같은 패키징된 앱을 전달하는 것입니다. 이 repo에는 아직 패키징 단계가 없어서, 지금은 위의 Terminal 실행 방식이 필요합니다.
-
-여러 사람에게 공유하기 전에는 `electron-builder` 같은 도구로 배포용 앱을 만드는 단계를 추가하는 것이 좋습니다.
-
-```bash
-npm install --save-dev electron-builder
-```
-
-그 다음 다운로드 가능한 앱 번들을 만드는 build script를 추가합니다.
-
-## GitHub Pages 다운로드 페이지
-
-이 repo의 공개 다운로드 페이지는 `docs/` 루트에 들어 있습니다. GitHub Pages는 `docs/index.html`을 `https://meoyaho.github.io/my-pigeon/`로 배포하고, 실제 앱 설치 파일은 GitHub Releases에서 내려받게 연결합니다.
-
-사용자 흐름:
-
-1. 사용자가 `https://meoyaho.github.io/my-pigeon/`에 접속합니다.
-2. 화면 중앙의 비둘기에 마우스를 올리면 문구와 이미지가 바뀝니다.
-3. 비둘기를 클릭하면 최신 GitHub Release의 설치 파일 다운로드로 이동합니다.
-
-배포 설정:
-
-1. `.dmg`, `.zip`, `.exe`, `.AppImage` 같은 설치 파일을 GitHub Releases에 업로드합니다.
-2. GitHub 저장소의 `Settings` → `Pages`로 이동합니다.
-3. `Source`를 `Deploy from a branch`로 설정합니다.
-4. `Branch`는 `main`, 폴더는 `/docs`로 선택하고 저장합니다.
-5. `main` 브랜치에 push하면 GitHub Pages가 `docs/index.html`을 배포합니다.
-
-배포 후 페이지 주소는 보통 다음과 같습니다.
-
-```text
-https://meoyaho.github.io/my-pigeon/
-```
-
-`docs/index.html`의 다운로드 버튼은 최신 GitHub Release의 설치 파일을 찾아 연결합니다. 설치 파일이 아직 없으면 최신 Releases 페이지로 이동합니다.
-
-## 개발 명령어
-
-앱 실행:
-
-```bash
-npm start
-```
-
-개발용 alias:
-
-```bash
-npm run dev
-```
-
-테스트:
-
-```bash
-npm test
-```
-
-배포용 macOS 앱 빌드:
-
-```bash
-npm run build
-```
-
-빌드가 끝나면 `dist/`에 `.dmg`와 `.zip` 파일이 생성됩니다. GitHub Release에는 이 설치 파일을 업로드하면 됩니다. 앱 이름은 `My Pigeon`이고, 앱 아이콘은 `assets/icon.png`에서 생성됩니다.
-
-현재 빌드는 Apple Developer ID로 코드서명/노터라이즈되지 않은 빌드입니다. macOS에서 다운로드한 `.dmg`를 열 때 `손상되었기 때문에 열 수 없습니다` 같은 Gatekeeper 경고가 뜰 수 있습니다.
-
-내 Mac에서만 테스트할 때는 앱을 Applications로 옮긴 뒤 다음 명령으로 quarantine 속성을 제거할 수 있습니다.
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/My Pigeon.app"
-```
-
-다른 사람에게 자연스럽게 배포하려면 Apple Developer Program 인증서로 Developer ID 코드서명을 하고 Apple notarization까지 해야 합니다. 이 과정을 거친 `.dmg`를 GitHub Release에 올려야 macOS 사용자가 보안 경고 없이 받을 수 있습니다.
-
-배포용 Windows 앱 빌드:
-
-```bash
-npm run build:win
-```
-
-Windows 사용자는 같은 다운로드 페이지에 접속하면 됩니다. 최신 GitHub Release에 `.exe` 또는 Windows용 `.zip` 파일이 올라와 있으면 페이지가 Windows용 파일을 우선 연결합니다. macOS에서 Windows 앱을 빌드하려면 추가 도구가 필요할 수 있으니, 가장 쉬운 방법은 Windows 노트북에서 위 명령으로 빌드한 뒤 `dist/`의 `.exe` 파일을 GitHub Release에 업로드하는 것입니다.

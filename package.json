@@ -1,80 +1,16 @@
 {
-  "name": "desktop-pigeon-pet",
+  "name": "my-pigeon",
   "version": "0.1.0",
-  "main": "electron/main.js",
-  "description": "A desktop pigeon pet Electron app.",
+  "description": "A Chrome extension pigeon that wanders around web pages.",
+  "private": true,
   "scripts": {
-    "build": "electron-builder --mac dmg zip",
-    "build:mac": "electron-builder --mac dmg zip",
-    "build:win": "electron-builder --win nsis zip --x64",
-    "dev": "electron .",
-    "doctor": "node scripts/doctor.js",
-    "icons": "node scripts/generate-app-icons.js",
-    "pack": "electron-builder --dir",
-    "prebuild": "npm run icons",
-    "prebuild:mac": "npm run icons",
-    "prebuild:win": "npm run icons",
-    "prepack": "npm run icons",
-    "start": "electron .",
-    "test": "jest --watchman=false"
+    "check": "node --check extension/content.js && node --check extension/popup.js",
+    "test": "npm run check"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "keywords": [],
+  "keywords": [
+    "chrome-extension",
+    "pigeon"
+  ],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "get-windows": "9.3.0",
-    "pixi.js": "8.19.0"
-  },
-  "devDependencies": {
-    "electron": "30.5.1",
-    "electron-builder": "26.15.3",
-    "jest": "30.4.2"
-  },
-  "build": {
-    "appId": "com.meoyaho.mypigeon",
-    "productName": "My Pigeon",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "assets/**/*",
-      "electron/**/*",
-      "renderer/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "category": "public.app-category.entertainment",
-      "icon": "build/icon.png",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        "nsis",
-        "zip"
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "protocols": [
-      {
-        "name": "My Pigeon",
-        "schemes": [
-          "pigeonpet"
-        ]
-      }
-    ]
-  },
-  "overrides": {
-    "earcut": "2.2.4"
-  }
+  "license": "ISC"
 }
