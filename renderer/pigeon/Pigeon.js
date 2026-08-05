@@ -12,6 +12,8 @@ const DEFAULTS = {
   walkDurationMs: 2000, // fallback-only: used when bounds are unknown, so no corner target exists
   walkSpeed: 0.06, // px/ms — real corner-to-corner walking pace once bounds are known
   fastWalkSpeed: 0.35, // px/ms — quick beeline pace, e.g. center -> corner right after commute-in
+  hopSpeed: 0.15, // px/ms — bouncier corner-to-corner pace used for the occasional hopping move
+  hopProbability: 0.35, // chance a corner-to-corner move hops instead of walks
   cornerArrivalThreshold: 80, // px — how close to a corner counts as "already there" after a drag
   rng: Math.random,
   bounds: null, // { width, height } — no clamping/corner-seeking without this (kept for existing tests)
@@ -150,9 +152,13 @@ class Pigeon {
       if (target) {
         // Real pigeon-like corner-to-corner walk: flyTo() also handles the
         // WALKING -> IDLE arrival and the idle/walk sprite swap automatically.
+        // Occasionally hops there instead of walking, for variety.
+        const hopping = this.opts.rng() < this.opts.hopProbability;
+        const state = hopping ? STATES.HOPPING : STATES.WALKING;
+        const speed = hopping ? this.opts.hopSpeed : this.opts.walkSpeed;
         const distance = Math.hypot(target.x - this.x, target.y - this.y);
-        const durationMs = Math.max(1, distance / this.opts.walkSpeed);
-        this.flyTo(target, durationMs, { state: STATES.WALKING, arriveState: STATES.IDLE });
+        const durationMs = Math.max(1, distance / speed);
+        this.flyTo(target, durationMs, { state, arriveState: STATES.IDLE });
       } else {
         // No bounds known (e.g. some unit tests construct a Pigeon without
         // them) — no corner to walk toward, so fall back to a stationary,
@@ -179,7 +185,8 @@ class Pigeon {
   // clampToBounds() before it has a chance to visibly fly in.
   _isFlightState(state) {
     return state === STATES.COMMUTE_IN || state === STATES.COMMUTE_OUT ||
-      state === STATES.WALKING || state === STATES.FLEEING || state === STATES.FLYING_TO_FOOD;
+      state === STATES.WALKING || state === STATES.HOPPING ||
+      state === STATES.FLEEING || state === STATES.FLYING_TO_FOOD;
   }
 
   // Maps the current state to a spritesheet animation name. WEIRD_BEHAVIOR
@@ -194,6 +201,7 @@ class Pigeon {
     switch (this.state) {
       case STATES.IDLE: return 'idle';
       case STATES.WALKING: return 'walk';
+      case STATES.HOPPING: return 'hopInPlace';
       case STATES.WEIRD_BEHAVIOR: return this.currentWeirdBehavior;
       case STATES.FLYING_TO_FOOD: return 'flyIn';
       case STATES.EATING: return 'eat';
@@ -425,7 +433,7 @@ class Pigeon {
   setWeather(condition) {
     this.weatherCondition = condition;
     if (condition === 'rain' || condition === 'snow') {
-      if (this.state === STATES.IDLE || this.state === STATES.WALKING) {
+      if (this.state === STATES.IDLE || this.state === STATES.WALKING || this.state === STATES.HOPPING) {
         this._enterState(STATES.WEATHER_REACTION);
       }
     } else if (this.state === STATES.WEATHER_REACTION) {

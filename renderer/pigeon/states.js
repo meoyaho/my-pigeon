@@ -1,6 +1,7 @@
 const STATES = {
   IDLE: 'IDLE',
   WALKING: 'WALKING',
+  HOPPING: 'HOPPING', // corner-to-corner move using the hop animation/pace instead of a walk
   WEIRD_BEHAVIOR: 'WEIRD_BEHAVIOR',
   FLYING_TO_FOOD: 'FLYING_TO_FOOD',
   EATING: 'EATING',
@@ -13,7 +14,7 @@ const STATES = {
   COMMUTE_OUT: 'COMMUTE_OUT',
 };
 
-const WEIRD_BEHAVIORS = ['flipOver', 'featherOnHead', 'oneLegDoze', 'courtshipCoo', 'hopInPlace'];
+const WEIRD_BEHAVIORS = ['flipOver', 'featherOnHead', 'oneLegDoze', 'courtshipCoo'];
 
 function pickRandomWeirdBehavior(rng = Math.random) {
   const index = Math.floor(rng() * WEIRD_BEHAVIORS.length);

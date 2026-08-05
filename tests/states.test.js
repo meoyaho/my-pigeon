@@ -1,8 +1,8 @@
 const { STATES, WEIRD_BEHAVIORS, pickRandomWeirdBehavior } = require('../renderer/pigeon/states');
 
-test('has exactly the 5 spec-required weird behaviors', () => {
+test('has exactly the 4 weird behaviors (hopInPlace moved to a movement style, not a weird behavior)', () => {
   expect(WEIRD_BEHAVIORS.sort()).toEqual(
-    ['flipOver', 'featherOnHead', 'oneLegDoze', 'courtshipCoo', 'hopInPlace'].sort()
+    ['flipOver', 'featherOnHead', 'oneLegDoze', 'courtshipCoo'].sort()
   );
 });
 

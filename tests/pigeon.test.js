@@ -161,10 +161,17 @@ function makeAttachedPigeon(x = 0, y = 0, options = {}) {
 }
 
 test('WALKING shows the walk animation', () => {
-  const p = makeAttachedPigeon(0, 0, { idleDurationMs: 100 });
+  const p = makeAttachedPigeon(0, 0, { idleDurationMs: 100, rng: () => 0.9 }); // > hopProbability, forces WALKING not HOPPING
   p.update(150);
   expect(p.getState()).toBe(STATES.WALKING);
   expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.walk);
+});
+
+test('HOPPING shows the hopInPlace animation', () => {
+  const p = makeAttachedPigeon(0, 0, { idleDurationMs: 100, rng: () => 0 }); // < hopProbability, forces HOPPING
+  p.update(150);
+  expect(p.getState()).toBe(STATES.HOPPING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.hopInPlace);
 });
 
 test('EATING (entered externally by Flock) shows the eat animation', () => {
@@ -243,7 +250,7 @@ test('WEIRD_BEHAVIOR shows the specific behavior chosen, e.g. courtshipCoo', () 
   const p = new Pigeon(FULL_SPRITESHEET, { x: 0, y: 0 }, {
     idleDurationMs: 1_000_000,
     weirdBehaviorIntervalMs: 100,
-    rng: () => 0.6, // picks 'courtshipCoo' (index 3 of 5 behaviors)
+    rng: () => 0.8, // picks 'courtshipCoo' (index 3 of 4 behaviors)
   });
   p.attachSprite(
     MOCK_PIXI,
@@ -268,7 +275,7 @@ test('a temporary pigeon spawned already in EATING shows the eat animation from 
 });
 
 test('random walk targets a corner other than the one the pigeon is already nearest to', () => {
-  const p = makeAttachedPigeon(50, 50, { idleDurationMs: 100, walkSpeed: 1000 });
+  const p = makeAttachedPigeon(50, 50, { idleDurationMs: 100, walkSpeed: 1000, rng: () => 0.9 }); // rng()=>0.9 > hopProbability, forces WALKING not HOPPING
   // (50,50) is nearest the top-left corner (margin 50,50 with the 100x100 mock sprite).
   p.update(150); // crosses idleDurationMs, triggers the corner-walk
   expect(p.getState()).toBe(STATES.WALKING);
@@ -382,7 +389,7 @@ test('doze (oneLegDoze) lasts 5 minutes, far longer than the other weird behavio
   const p = makeAttachedPigeon(0, 0, {
     idleDurationMs: 1_000_000,
     weirdBehaviorIntervalMs: 100,
-    rng: () => 0.4, // picks 'oneLegDoze' (index 2 of 5 behaviors)
+    rng: () => 0.6, // picks 'oneLegDoze' (index 2 of 4 behaviors)
   });
   p.update(100);
   expect(p.currentWeirdBehavior).toBe('oneLegDoze');
