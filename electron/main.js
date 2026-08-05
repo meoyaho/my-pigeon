@@ -1,4 +1,4 @@
-const { app, ipcMain, dialog } = require('electron');
+const { app, ipcMain, dialog, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { createOverlayWindow, setClickThroughExceptRegion } = require('./overlayWindow');
@@ -50,6 +50,27 @@ function quitOnce() {
     quitTimeout = null;
   }
   app.quit();
+}
+
+// Shared by both the tray menu and the pigeon's right-click context menu, so
+// the two entry points can never drift apart.
+function handleFeed() {
+  overlayWin.webContents.send(IPC.FEED_TRIGGERED);
+}
+
+function handlePhoto() {
+  openCameraWindow();
+}
+
+function handleCommuteOut() {
+  if (commuteOutTriggered) return;
+  commuteOutTriggered = true;
+  overlayWin.webContents.send(IPC.COMMUTE_OUT);
+  // Fallback: if the renderer never responds with commute-out-animation-done
+  // (crashed, hung, etc.), still quit within ~4s so the user always has a way
+  // to close the app. quitOnce() clears this timer if the normal path fires
+  // first, and app.quit() itself is safe to call more than once.
+  quitTimeout = setTimeout(() => quitOnce(), 4000);
 }
 
 if (gotSingleInstanceLock) {
@@ -106,20 +127,17 @@ if (gotSingleInstanceLock) {
       return { saved: true, filePath };
     });
 
-    tray = createTray(
-      () => overlayWin.webContents.send(IPC.FEED_TRIGGERED),
-      () => openCameraWindow(),
-      () => {
-        if (commuteOutTriggered) return;
-        commuteOutTriggered = true;
-        overlayWin.webContents.send(IPC.COMMUTE_OUT);
-        // Fallback: if the renderer never responds with commute-out-animation-done
-        // (crashed, hung, etc.), still quit within ~4s so the user always has a way
-        // to close the app via the tray. quitOnce() clears this timer if the normal
-        // path fires first, and app.quit() itself is safe to call more than once.
-        quitTimeout = setTimeout(() => quitOnce(), 4000);
-      }
-    );
+    tray = createTray(handleFeed, handlePhoto, handleCommuteOut);
+
+    const contextMenu = Menu.buildFromTemplate([
+      { label: '먹이 주기', click: handleFeed },
+      { label: '사진 찍기', click: handlePhoto },
+      { label: '퇴근', click: handleCommuteOut },
+    ]);
+
+    ipcMain.on('show-context-menu', () => {
+      contextMenu.popup({ window: overlayWin });
+    });
   });
 }
 

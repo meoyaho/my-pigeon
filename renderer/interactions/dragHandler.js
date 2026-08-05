@@ -5,7 +5,8 @@ function attachDragHandlers(pigeon) {
 
   let dragging = false;
 
-  sprite.on('pointerdown', () => {
+  sprite.on('pointerdown', (event) => {
+    if (event.button !== 0) return; // ignore right/middle click, only left starts a drag
     dragging = true;
     pigeon.startDrag();
   });
