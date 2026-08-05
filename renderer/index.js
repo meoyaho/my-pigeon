@@ -7,6 +7,7 @@ const { IPC } = require('../electron/ipcChannels');
 const { MouseVelocityTracker, shouldScatter } = require('./interactions/mouseTracker');
 const { attachDragHandlers } = require('./interactions/dragHandler');
 const { FeedModeController } = require('./interactions/feedMode');
+const { Flock } = require('./pigeon/flock');
 
 // pixi.js 8.x moved Application setup to an async `init()` call; the constructor
 // no longer accepts renderer options synchronously (that path is deprecated and,
@@ -41,10 +42,8 @@ function getMainPigeon() {
   mainPigeon.sprite.on('pointerover', () => window.pigeonBridge.send('cursor-over-hitbox', true));
   mainPigeon.sprite.on('pointerout', () => window.pigeonBridge.send('cursor-over-hitbox', false));
 
-  app.ticker.add(() => {
-    const deltaMs = app.ticker.deltaMS;
-    mainPigeon.update(deltaMs);
-  });
+  const flock = new Flock(mainPigeon);
+  const temporarySprites = new Map();
 
   const feedMode = new FeedModeController();
 
@@ -59,15 +58,37 @@ function getMainPigeon() {
     if (point) {
       document.body.style.cursor = 'default';
       window.pigeonBridge.send('feed-mode-active', false);
-      window.pigeonBridge.send(IPC.FEED_PLACED, point); // consumed in Task 11
+      window.pigeonBridge.send(IPC.FEED_PLACED, point);
     }
   });
 
+  window.pigeonBridge.on(IPC.FEED_PLACED, (point) => {
+    flock.startFeeding(point);
+  });
+
   app.ticker.add(() => {
-    feedMode.tick(app.ticker.deltaMS);
+    const deltaMs = app.ticker.deltaMS;
+    feedMode.tick(deltaMs);
     if (!feedMode.isActive() && document.body.style.cursor === 'crosshair') {
       document.body.style.cursor = 'default';
       window.pigeonBridge.send('feed-mode-active', false);
+    }
+    flock.update(deltaMs);
+
+    // Sync Pixi sprites for temporary pigeons with the flock's current list.
+    const current = new Set(flock.getTemporaryPigeons());
+    for (const pigeon of flock.getTemporaryPigeons()) {
+      if (!temporarySprites.has(pigeon)) {
+        pigeon.attachSprite(PIXI, app.stage);
+        temporarySprites.set(pigeon, pigeon.sprite);
+      }
+    }
+    for (const [pigeon, sprite] of temporarySprites) {
+      if (!current.has(pigeon)) {
+        app.stage.removeChild(sprite);
+        sprite.destroy();
+        temporarySprites.delete(pigeon);
+      }
     }
   });
 
