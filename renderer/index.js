@@ -71,6 +71,11 @@ function getMainPigeon() {
     for (const pigeon of flock.getTemporaryPigeons()) pigeon.maybeStartle();
   });
 
+  window.pigeonBridge.on(IPC.WEATHER_UPDATED, (condition) => {
+    mainPigeon.setWeather(condition);
+    for (const pigeon of flock.getTemporaryPigeons()) pigeon.setWeather(condition);
+  });
+
   app.ticker.add(() => {
     const deltaMs = app.ticker.deltaMS;
     feedMode.tick(deltaMs);

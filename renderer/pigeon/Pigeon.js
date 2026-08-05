@@ -114,6 +114,17 @@ class Pigeon {
     }
   }
 
+  setWeather(condition) {
+    this.weatherCondition = condition;
+    if (condition === 'rain' || condition === 'snow') {
+      if (this.state === STATES.IDLE || this.state === STATES.WALKING) {
+        this._enterState(STATES.WEATHER_REACTION);
+      }
+    } else if (this.state === STATES.WEATHER_REACTION) {
+      this._enterState(STATES.IDLE);
+    }
+  }
+
   // The only method that touches Pixi. Called once after construction by flock.js.
   attachSprite(PIXI, container) {
     const frames = this.spritesheet.frames.idle;

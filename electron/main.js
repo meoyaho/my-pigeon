@@ -3,6 +3,7 @@ const { createOverlayWindow, setClickThroughExceptRegion } = require('./overlayW
 const { createTray } = require('./tray');
 const { IPC } = require('./ipcChannels');
 const { startActiveWindowWatcher } = require('./activeWindowWatcher');
+const { startWeatherPolling } = require('./weather');
 
 let overlayWin;
 let tray;
@@ -13,6 +14,10 @@ app.whenReady().then(() => {
 
   startActiveWindowWatcher(() => {
     overlayWin.webContents.send(IPC.FOCUS_CHANGED);
+  });
+
+  startWeatherPolling(({ condition }) => {
+    overlayWin.webContents.send(IPC.WEATHER_UPDATED, condition);
   });
 
   ipcMain.on('cursor-over-hitbox', (_event, isOverHitbox) => {
