@@ -342,3 +342,28 @@ test('weird-behavior animations play at a slower cadence than normal ones', () =
   expect(p.getState()).toBe(STATES.WEIRD_BEHAVIOR);
   expect(p.sprite.animationSpeed).toBeLessThan(normalSpeed);
 });
+
+test('walkToRandomCorner immediately starts a fast walk, bypassing the idle-duration wait', () => {
+  const p = makeAttachedPigeon(400, 300, { idleDurationMs: 1_000_000_000 }); // would never auto-walk
+  const started = p.walkToRandomCorner();
+  expect(started).toBe(true);
+  expect(p.getState()).toBe(STATES.WALKING);
+  expect(p.sprite.textures).toBe(FULL_SPRITESHEET.frames.walk);
+});
+
+test('walkToRandomCorner uses fastWalkSpeed by default, much quicker than the normal walkSpeed', () => {
+  const p = makeAttachedPigeon(400, 300, { walkSpeed: 0.06, fastWalkSpeed: 0.35 });
+  p.walkToRandomCorner();
+  // At fastWalkSpeed the ~400px trip from center to a corner finishes well
+  // under 2s; at the normal (5-6x slower) walkSpeed it would still be
+  // mid-flight at this point.
+  p.update(2000);
+  expect(p.getState()).toBe(STATES.IDLE);
+});
+
+test('walkToRandomCorner is a no-op when bounds are unknown', () => {
+  const p = new Pigeon(FULL_SPRITESHEET, { x: 0, y: 0 });
+  const started = p.walkToRandomCorner();
+  expect(started).toBe(false);
+  expect(p.getState()).toBe(STATES.IDLE);
+});

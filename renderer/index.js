@@ -161,6 +161,9 @@ function getMainPigeon() {
           y: mainPigeon.sprite.y,
           text: pickCommuteInPhrase(),
         });
+        // Don't just sit at center for the full idle duration — quickly head
+        // to a corner right after landing, same as real pigeon behavior.
+        mainPigeon.walkToRandomCorner();
       },
     });
   });

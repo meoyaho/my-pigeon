@@ -11,6 +11,7 @@ const DEFAULTS = {
   weirdBehaviorAnimationSpeed: 0.04, // slower cadence specifically for the 5 weird behaviors
   walkDurationMs: 2000, // fallback-only: used when bounds are unknown, so no corner target exists
   walkSpeed: 0.06, // px/ms — real corner-to-corner walking pace once bounds are known
+  fastWalkSpeed: 0.35, // px/ms — quick beeline pace, e.g. center -> corner right after commute-in
   cornerArrivalThreshold: 80, // px — how close to a corner counts as "already there" after a drag
   rng: Math.random,
   bounds: null, // { width, height } — no clamping/corner-seeking without this (kept for existing tests)
@@ -245,6 +246,21 @@ class Pigeon {
     const choices = corners.filter((_, index) => index !== nearestIndex);
     const pickIndex = Math.min(Math.floor(this.opts.rng() * choices.length), choices.length - 1);
     return choices[pickIndex];
+  }
+
+  // Immediately beelines to a random corner at speedPxPerMs (default:
+  // fastWalkSpeed, much quicker than the idle-timer-gated normal walk pace),
+  // bypassing the idleDurationMs wait entirely. Used right after commute-in
+  // lands at center, so the pigeon doesn't just sit in the middle of the
+  // screen for the full idle duration. No-ops (returns false) if bounds
+  // aren't known. Returns true if a walk was actually started.
+  walkToRandomCorner(speedPxPerMs = this.opts.fastWalkSpeed) {
+    const target = this._pickWalkTarget();
+    if (!target) return false;
+    const distance = Math.hypot(target.x - this.x, target.y - this.y);
+    const durationMs = Math.max(1, distance / speedPxPerMs);
+    this.flyTo(target, durationMs, { state: STATES.WALKING, arriveState: STATES.IDLE });
+    return true;
   }
 
   startDrag() {
