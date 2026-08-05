@@ -39,6 +39,12 @@ GitHub Pages 페이지는 `docs/` 루트에 있습니다.
 
 현재 Pages 화면은 비둘기 이미지를 보여주고, 클릭하면 이 README의 Chrome 확장 프로그램 설치 안내로 이동합니다. Chrome 정책상 웹사이트에서 임의의 확장 프로그램을 직접 설치시키는 방식은 제한되어 있어서, 자연스럽게 배포하려면 나중에 Chrome Web Store 등록 링크를 연결하는 방식이 가장 깔끔합니다.
 
+개인정보 처리방침 페이지는 `docs/privacy.html`에 있습니다. GitHub Pages 배포 뒤에는 `https://meoyaho.github.io/my-pigeon/privacy.html`을 Chrome Web Store의 개인정보 처리방침 URL로 사용할 수 있습니다.
+
+## Chrome Web Store 제출 문구
+
+스토어 등록 화면과 개인정보 보호 관행 탭에 넣을 문구는 `CHROME_WEB_STORE.md`에 정리되어 있습니다.
+
 ## 개발 확인
 
 확장 프로그램은 별도 빌드가 필요 없습니다. 문법 확인은 다음 명령으로 할 수 있습니다.

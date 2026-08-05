@@ -199,6 +199,18 @@
     return next;
   }
 
+  function resetStudySession() {
+    return persistStudySession({
+      startedAt: 0,
+      rewardAvailable: false,
+      flapCount: 0,
+      focusedMinutes: 0,
+      completedAt: 0,
+      restNoticeId: 0,
+      restUntil: 0,
+    });
+  }
+
   function isFocusActive() {
     return Boolean(state.study.startedAt && !state.study.rewardAvailable);
   }
@@ -875,8 +887,25 @@
     }
   }
 
-  function startCommuteIn() {
+  function scheduleAfterCommuteGreeting(actor) {
+    later(() => {
+      if (!state.host || state.phase !== 'normal' || actor.drag) return;
+      if (state.study.rewardAvailable) {
+        if (isRestActive()) showRestNotice();
+        else finishRestPeriod();
+        return;
+      }
+      if (state.study.startedAt) {
+        moveToFocusCorner(actor);
+        return;
+      }
+      if (isStudyPending()) moveToFocusCorner(actor, { startOnArrive: true });
+    }, 3000);
+  }
+
+  function startCommuteIn(options = {}) {
     const actor = state.main;
+    if (options.freshStart) resetStudySession();
     state.phase = 'commuteIn';
     actor.x = -220;
     actor.y = -140;
@@ -889,25 +918,21 @@
     }, 'flyIn', 1200, (now) => {
       state.phase = 'normal';
       enterIdle(actor, now);
-      if (state.study.rewardAvailable) {
+      if (options.freshStart) {
+        state.studyAlignmentSuppressedUntil = now + 3200;
+        showBubble(pick(GREETINGS), 2400);
+        scheduleAfterCommuteGreeting(actor);
+      } else if (state.study.rewardAvailable) {
         if (isRestActive()) showRestNotice();
         else finishRestPeriod();
       } else if (state.study.startedAt) {
         state.studyAlignmentSuppressedUntil = now + 3200;
         showBubble(pick(GREETINGS), 2400);
-        later(() => {
-          if (state.host && state.phase === 'normal' && !actor.drag && state.study.startedAt) {
-            moveToFocusCorner(actor);
-          }
-        }, 3000);
+        scheduleAfterCommuteGreeting(actor);
       } else {
         state.studyAlignmentSuppressedUntil = now + 3200;
         showBubble(pick(GREETINGS), 2400);
-        later(() => {
-          if (state.host && state.phase === 'normal' && !actor.drag && isStudyPending()) {
-            moveToFocusCorner(actor, { startOnArrive: true });
-          }
-        }, 3000);
+        scheduleAfterCommuteGreeting(actor);
       }
     }, { allowOffscreen: true });
   }
@@ -1518,10 +1543,11 @@
     loadStudySession(() => {
       loadActorSnapshot((restoredActor) => {
         if (!state.host) return;
-        const shouldCommuteIn = state.forceCommuteIn || !restoredActor;
+        const freshCommuteIn = state.forceCommuteIn;
+        const shouldCommuteIn = freshCommuteIn || !restoredActor;
         state.forceCommuteIn = false;
         state.lastTickAt = performance.now();
-        if (shouldCommuteIn) startCommuteIn();
+        if (shouldCommuteIn) startCommuteIn({ freshStart: freshCommuteIn });
         else updateFeedMenu();
         state.raf = window.requestAnimationFrame(tick);
       });

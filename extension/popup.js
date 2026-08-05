@@ -48,12 +48,13 @@ enabled.addEventListener('change', () => {
 commuteIn.addEventListener('click', () => {
   state.enabled = true;
   state.offDuty = false;
-  chrome.storage.local.set({
-    [OFF_DUTY_STORAGE_KEY]: false,
-    [STUDY_STORAGE_KEY]: emptyStudySession(),
-  });
-  chrome.storage.local.remove(ACTOR_STORAGE_KEY);
   chrome.storage.sync.set({ enabled: true });
+  chrome.storage.local.remove(ACTOR_STORAGE_KEY, () => {
+    chrome.storage.local.set({
+      [OFF_DUTY_STORAGE_KEY]: false,
+      [STUDY_STORAGE_KEY]: emptyStudySession(),
+    });
+  });
   render();
 });
 
