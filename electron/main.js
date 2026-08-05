@@ -1,12 +1,10 @@
-const { app, ipcMain, dialog, Menu } = require('electron');
-const fs = require('fs');
+const { app, ipcMain, Menu } = require('electron');
 const path = require('path');
 const { createOverlayWindow, setClickThroughExceptRegion } = require('./overlayWindow');
 const { createTray } = require('./tray');
 const { IPC } = require('./ipcChannels');
 const { startActiveWindowWatcher } = require('./activeWindowWatcher');
 const { startWeatherPolling } = require('./weather');
-const { openCameraWindow } = require('./cameraWindow');
 
 const APP_PROTOCOL = 'pigeonpet';
 
@@ -56,10 +54,6 @@ function quitOnce() {
 // the two entry points can never drift apart.
 function handleFeed() {
   overlayWin.webContents.send(IPC.FEED_TRIGGERED);
-}
-
-function handlePhoto() {
-  openCameraWindow();
 }
 
 function handleCommuteOut() {
@@ -127,22 +121,10 @@ if (gotSingleInstanceLock) {
 
     ipcMain.once('commute-out-animation-done', () => quitOnce());
 
-    ipcMain.handle('save-photo', async (_event, dataUrl) => {
-      const { filePath } = await dialog.showSaveDialog({
-        defaultPath: 'pigeon-photo.png',
-        filters: [{ name: 'PNG Image', extensions: ['png'] }],
-      });
-      if (!filePath) return { saved: false };
-      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-      fs.writeFileSync(filePath, base64, 'base64');
-      return { saved: true, filePath };
-    });
-
-    tray = createTray(handleFeed, handlePhoto, handleCommuteOut);
+    tray = createTray(handleFeed, handleCommuteOut);
 
     const contextMenu = Menu.buildFromTemplate([
       { label: '먹이 주기', click: handleFeed },
-      { label: '사진 찍기', click: handlePhoto },
       { label: '퇴근', click: handleCommuteOut },
     ]);
 

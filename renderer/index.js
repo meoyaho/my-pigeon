@@ -55,7 +55,7 @@ function getMainPigeon() {
   attachDragHandlers(mainPigeon);
   mainPigeon.sprite.on('pointerover', () => window.pigeonBridge.send('cursor-over-hitbox', true));
   mainPigeon.sprite.on('pointerout', () => window.pigeonBridge.send('cursor-over-hitbox', false));
-  // Right-click the pigeon to reveal the same 먹이 주기/사진 찍기/퇴근 menu as the
+  // Right-click the pigeon to reveal the same 먹이 주기/퇴근 menu as the
   // tray icon — surfaces the app's controls without any always-visible UI chrome.
   mainPigeon.sprite.on('rightdown', () => window.pigeonBridge.send('show-context-menu'));
   window.addEventListener('contextmenu', (e) => e.preventDefault());
