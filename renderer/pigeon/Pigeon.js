@@ -18,6 +18,20 @@ const DEFAULTS = {
   boundsMargin: 160, // fallback half-extent used only before a sprite is attached
 };
 
+// Clamps a raw {x,y} point into [margin, size - margin] on each axis. Pure
+// and Pixi-free, exported so callers with a target point but no attached
+// pigeon yet (Flock computing an eating spot before spawning the pigeon
+// that will occupy it) can keep it on-screen without instantiating one
+// just to borrow clampToBounds(). Returns the point unchanged if bounds
+// is falsy (nothing to clamp against).
+function clampPointToBounds(point, bounds, margin) {
+  if (!bounds) return point;
+  return {
+    x: Math.max(margin.x, Math.min(bounds.width - margin.x, point.x)),
+    y: Math.max(margin.y, Math.min(bounds.height - margin.y, point.y)),
+  };
+}
+
 class Pigeon {
   constructor(spritesheet, { x, y }, options = {}) {
     this.spritesheet = spritesheet;
@@ -218,8 +232,9 @@ class Pigeon {
     const bounds = this.opts.bounds;
     if (!bounds) return;
     const margin = this._getMargins();
-    this.x = Math.max(margin.x, Math.min(bounds.width - margin.x, this.x));
-    this.y = Math.max(margin.y, Math.min(bounds.height - margin.y, this.y));
+    const clamped = clampPointToBounds({ x: this.x, y: this.y }, bounds, margin);
+    this.x = clamped.x;
+    this.y = clamped.y;
   }
 
   // The 4 screen corners, inset by the same margin clampToBounds() uses, so a
@@ -419,4 +434,4 @@ class Pigeon {
   }
 }
 
-module.exports = { Pigeon };
+module.exports = { Pigeon, clampPointToBounds };

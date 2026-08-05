@@ -57,13 +57,23 @@ function makeMainWithBounds(options = {}) {
 test('startFeeding flies the main pigeon to the food point instead of teleporting (bounds known)', () => {
   const main = makeMainWithBounds();
   const flock = new Flock(main);
-  flock.startFeeding({ x: 700, y: 500 });
+  flock.startFeeding({ x: 500, y: 350 }); // safely inside the margin, so clamping doesn't kick in
   expect(main.getState()).toBe(STATES.FLYING_TO_FOOD);
   expect(main.x).toBe(0); // hasn't teleported — still mid-flight from its starting position
   flock.update(10000); // fast speed — arrives well within this
   expect(main.getState()).toBe(STATES.EATING);
-  expect(main.x).toBeCloseTo(700, 0);
-  expect(main.y).toBeCloseTo(500, 0);
+  expect(main.x).toBeCloseTo(500, 0);
+  expect(main.y).toBeCloseTo(350, 0);
+});
+
+test('startFeeding clamps the food point so pigeons never eat with part of their body off-screen', () => {
+  const main = makeMainWithBounds(); // 800x600 bounds, boundsMargin 160 (no sprite attached in this test)
+  const flock = new Flock(main);
+  flock.startFeeding({ x: 795, y: 5 }); // right at the corner, past the safe margin
+  flock.update(10000);
+  expect(main.getState()).toBe(STATES.EATING);
+  expect(main.x).toBeLessThanOrEqual(800 - 160);
+  expect(main.y).toBeGreaterThanOrEqual(160);
 });
 
 test('temporary pigeons fly in from off-screen (bounds known), not materialize already at the food', () => {

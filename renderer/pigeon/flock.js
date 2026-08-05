@@ -1,4 +1,4 @@
-const { Pigeon } = require('./Pigeon');
+const { Pigeon, clampPointToBounds } = require('./Pigeon');
 const { STATES } = require('./states');
 
 const MAX_TEMPORARY_PIGEONS = 8;
@@ -23,7 +23,13 @@ class Flock {
   startFeeding(point) {
     if (this.feeding) return;
     this.feeding = true;
-    this.foodPoint = point;
+    // Clamp the food point itself, so pigeons never end up eating with part
+    // of their body hanging off the edge just because the user placed food
+    // right at (or past) the screen border. Uses the main pigeon's real
+    // sprite dimensions for the margin, since it's already attached by now.
+    const bounds = this.mainPigeon.opts.bounds;
+    const margin = this.mainPigeon._getMargins(); // real sprite dims — main pigeon is already attached by now
+    this.foodPoint = clampPointToBounds(point, bounds, margin);
     this.spawnTimerMs = 0;
     this.spawnedCount = 0;
     this.dispersalTimerMs = 0;
@@ -32,9 +38,9 @@ class Flock {
     // interpolating between the pigeon's current position and the food
     // point, no screen-size knowledge needed.
     const speed = this.mainPigeon.opts.fastWalkSpeed;
-    const distance = Math.hypot(point.x - this.mainPigeon.x, point.y - this.mainPigeon.y);
+    const distance = Math.hypot(this.foodPoint.x - this.mainPigeon.x, this.foodPoint.y - this.mainPigeon.y);
     const durationMs = Math.max(1, distance / speed);
-    this.mainPigeon.flyTo(point, durationMs, { state: STATES.FLYING_TO_FOOD, arriveState: STATES.EATING });
+    this.mainPigeon.flyTo(this.foodPoint, durationMs, { state: STATES.FLYING_TO_FOOD, arriveState: STATES.EATING });
   }
 
   getTemporaryPigeons() {
@@ -58,10 +64,14 @@ class Flock {
         // start off-screen — instead of just materializing there already
         // eating. Falls back to instant placement when bounds aren't known
         // (no screen size to compute an off-screen spawn point against).
-        const eatAngle = (this.spawnedCount / MAX_TEMPORARY_PIGEONS) * Math.PI * 2;
-        const eatX = this.foodPoint.x + Math.cos(eatAngle) * 40;
-        const eatY = this.foodPoint.y + Math.sin(eatAngle) * 40;
+        // The ring offset (±40px) can still push a spot past the edge even
+        // though foodPoint itself is already clamped, so clamp again here.
         const bounds = this.mainPigeon.opts.bounds;
+        const margin = this.mainPigeon._getMargins(); // real sprite dims — main pigeon is already attached by now
+        const eatAngle = (this.spawnedCount / MAX_TEMPORARY_PIGEONS) * Math.PI * 2;
+        const rawEatX = this.foodPoint.x + Math.cos(eatAngle) * 40;
+        const rawEatY = this.foodPoint.y + Math.sin(eatAngle) * 40;
+        const { x: eatX, y: eatY } = clampPointToBounds({ x: rawEatX, y: rawEatY }, bounds, margin);
 
         let spawnX = eatX;
         let spawnY = eatY;
