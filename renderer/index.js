@@ -120,9 +120,12 @@ function getMainPigeon() {
   window.addEventListener('mousemove', (e) => {
     mouseTracker.recordSample({ x: e.clientX, y: e.clientY, tMs: performance.now() });
     const velocity = mouseTracker.getVelocity();
-    if (shouldScatter(velocity)) {
+    const temporaryPigeons = flock.getTemporaryPigeons();
+    // 훠이훠이 only scatters a gathered flock (feeding in progress) — a lone
+    // main pigeon just wandering around isn't affected by fast mouse moves.
+    if (shouldScatter(velocity) && temporaryPigeons.length > 0) {
       mainPigeon.scatterAwayFrom({ x: e.clientX, y: e.clientY });
-      for (const pigeon of flock.getTemporaryPigeons()) {
+      for (const pigeon of temporaryPigeons) {
         pigeon.scatterAwayFrom({ x: e.clientX, y: e.clientY });
       }
     }
