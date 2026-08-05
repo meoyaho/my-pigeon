@@ -11,7 +11,7 @@ const ANIMATION_FRAME_COUNTS = {
   flyIn: 3,
   flyOut: 3,
   eat: 2,
-  startled: 2,
+  startled: 1,
   weatherHuddle: 2,
   dragged: 1,
 };
