@@ -161,9 +161,12 @@ function getMainPigeon() {
           y: mainPigeon.sprite.y,
           text: pickCommuteInPhrase(),
         });
-        // Don't just sit at center for the full idle duration — quickly head
-        // to a corner right after landing, same as real pigeon behavior.
-        mainPigeon.walkToRandomCorner();
+        // Briefly stand at center (long enough to read the greeting bubble),
+        // then walk to a corner at the normal pace — not the full 25-minute
+        // idle wait, but not a fast beeline either.
+        setTimeout(() => {
+          mainPigeon.walkToRandomCorner(mainPigeon.opts.walkSpeed);
+        }, 3000);
       },
     });
   });
