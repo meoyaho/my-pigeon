@@ -35,7 +35,9 @@ function getMainPigeon() {
 
   const spritesheet = await buildPlaceholderSpritesheet(PIXI);
 
-  mainPigeon = new Pigeon(spritesheet, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+  mainPigeon = new Pigeon(spritesheet, { x: window.innerWidth / 2, y: window.innerHeight / 2 }, {
+    bounds: { width: window.innerWidth, height: window.innerHeight },
+  });
   mainPigeon.attachSprite(PIXI, app.stage);
 
   attachDragHandlers(mainPigeon);

@@ -6,6 +6,8 @@ const DEFAULTS = {
   weirdBehaviorDurationMs: 2500,
   walkDurationMs: 2000,
   rng: Math.random,
+  bounds: null, // { width, height } — no clamping by default (kept for existing tests)
+  boundsMargin: 20,
 };
 
 class Pigeon {
@@ -41,6 +43,7 @@ class Pigeon {
       const speed = 0.4; // px/ms placeholder movement speed
       this.x += this.fleeDirection.x * speed * deltaMs;
       this.y += this.fleeDirection.y * speed * deltaMs;
+      this.clampToBounds();
       if (this.stateElapsedMs >= 600) {
         this._enterState(STATES.IDLE);
       }
@@ -89,6 +92,18 @@ class Pigeon {
   _enterState(newState) {
     this.state = newState;
     this.stateElapsedMs = 0;
+  }
+
+  // Keeps x/y within opts.bounds (if set), so movement never drifts the
+  // pigeon off the visible screen. No-ops if bounds weren't provided —
+  // used by SCATTERING's own movement and by any external code (Flock,
+  // dragHandler) that sets x/y directly.
+  clampToBounds() {
+    const bounds = this.opts.bounds;
+    if (!bounds) return;
+    const margin = this.opts.boundsMargin;
+    this.x = Math.max(margin, Math.min(bounds.width - margin, this.x));
+    this.y = Math.max(margin, Math.min(bounds.height - margin, this.y));
   }
 
   startDrag() {

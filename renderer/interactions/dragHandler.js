@@ -15,8 +15,9 @@ function attachDragHandlers(pigeon) {
     const pos = event.global;
     pigeon.x = pos.x;
     pigeon.y = pos.y;
-    sprite.x = pos.x;
-    sprite.y = pos.y;
+    pigeon.clampToBounds();
+    sprite.x = pigeon.x;
+    sprite.y = pigeon.y;
   });
 
   const stopDragging = () => {

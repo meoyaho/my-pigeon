@@ -28,6 +28,7 @@ class Flock {
     this.dispersalTimerMs = 0;
     this.mainPigeon.x = point.x;
     this.mainPigeon.y = point.y;
+    this.mainPigeon.clampToBounds();
     this.mainPigeon._enterState(STATES.FLYING_TO_FOOD);
   }
 
@@ -49,7 +50,11 @@ class Flock {
         const angle = (this.spawnedCount / MAX_TEMPORARY_PIGEONS) * Math.PI * 2;
         const spawnX = this.foodPoint.x + Math.cos(angle) * 40;
         const spawnY = this.foodPoint.y + Math.sin(angle) * 40;
-        const pigeon = new Pigeon(this.mainPigeon.spritesheet, { x: spawnX, y: spawnY });
+        const pigeon = new Pigeon(this.mainPigeon.spritesheet, { x: spawnX, y: spawnY }, {
+          bounds: this.mainPigeon.opts.bounds,
+          boundsMargin: this.mainPigeon.opts.boundsMargin,
+        });
+        pigeon.clampToBounds();
         pigeon._enterState(STATES.EATING);
         this.temporaryPigeons.push(pigeon);
       }
