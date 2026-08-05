@@ -112,7 +112,7 @@ body {
 
 .pigeon-hover {
   opacity: 0;
-  transform: translateY(-15px);
+  transform: translateY(-12px);
 }
 
 .pigeon-download:hover .default-text,

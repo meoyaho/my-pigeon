@@ -55,7 +55,7 @@ npm run doctor
 
 ## 자주 막히는 부분
 
-`Node.js >= 18.18`에서 실패하면 Node.js 버전이 낮은 상태입니다. Node.js 20 LTS 이상으로 바꾼 뒤 다시 실행합니다.
+`Node.js >= 20`에서 실패하면 Node.js 버전이 낮은 상태입니다. Node.js 20 LTS 이상으로 바꾼 뒤 다시 실행합니다.
 
 `electron: command not found`가 나오면 의존성이 아직 설치되지 않은 상태입니다.
 
@@ -81,11 +81,21 @@ npm install --save-dev electron-builder
 
 ## GitHub Pages 다운로드 페이지
 
-이 repo에는 GitHub Pages용 정적 페이지가 `site/`에 들어 있습니다. GitHub Pages에는 웹페이지만 올리고, 실제 앱 설치 파일은 GitHub Releases에 올리는 방식입니다.
+이 repo의 공개 다운로드 페이지는 `docs/` 루트에 들어 있습니다. GitHub Pages는 `docs/index.html`을 `https://meoyaho.github.io/my-pigeon/`로 배포하고, 실제 앱 설치 파일은 GitHub Releases에서 내려받게 연결합니다.
+
+사용자 흐름:
+
+1. 사용자가 `https://meoyaho.github.io/my-pigeon/`에 접속합니다.
+2. 화면 중앙의 비둘기에 마우스를 올리면 문구와 이미지가 바뀝니다.
+3. 비둘기를 클릭하면 최신 GitHub Release의 설치 파일 다운로드로 이동합니다.
+
+배포 설정:
 
 1. `.dmg`, `.zip`, `.exe`, `.AppImage` 같은 설치 파일을 GitHub Releases에 업로드합니다.
-2. GitHub 저장소의 `Settings` → `Pages`에서 `Source`를 `GitHub Actions`로 설정합니다.
-3. `main` 브랜치에 push하면 `.github/workflows/pages.yml`이 `site/`를 Pages에 배포합니다.
+2. GitHub 저장소의 `Settings` → `Pages`로 이동합니다.
+3. `Source`를 `Deploy from a branch`로 설정합니다.
+4. `Branch`는 `main`, 폴더는 `/docs`로 선택하고 저장합니다.
+5. `main` 브랜치에 push하면 GitHub Pages가 `docs/index.html`을 배포합니다.
 
 배포 후 페이지 주소는 보통 다음과 같습니다.
 
@@ -93,9 +103,7 @@ npm install --save-dev electron-builder
 https://meoyaho.github.io/my-pigeon/
 ```
 
-`site/index.html`의 다운로드 버튼은 최신 GitHub Release의 설치 파일을 찾아 연결합니다. 설치 파일이 아직 없으면 최신 Releases 페이지로 이동합니다.
-
-페이지의 `설치된 앱 열기` 버튼은 `pigeonpet://open` 주소를 사용합니다. 이 주소는 앱이 설치되어 있고 운영체제에 프로토콜이 등록된 뒤에만 동작합니다. 개발 중 `npm start`로 실행한 앱에서는 운영체제나 브라우저에 따라 동작이 다를 수 있고, 배포용으로 패키징한 앱에서 쓰는 흐름에 가깝습니다.
+`docs/index.html`의 다운로드 버튼은 최신 GitHub Release의 설치 파일을 찾아 연결합니다. 설치 파일이 아직 없으면 최신 Releases 페이지로 이동합니다.
 
 ## 개발 명령어
 
