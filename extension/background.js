@@ -1,5 +1,6 @@
 const READY_MESSAGE = 'myPigeon:documentReady';
 const ACTIVE_MESSAGE = 'myPigeon:setActive';
+const CHROME_FOCUS_MESSAGE = 'myPigeon:chromeFocusChanged';
 
 let activeTabId = 0;
 
@@ -7,6 +8,26 @@ function sendActiveState(tabId, active) {
   if (!tabId) return;
   chrome.tabs.sendMessage(tabId, { type: ACTIVE_MESSAGE, active }, () => {
     void chrome.runtime.lastError;
+  });
+}
+
+function sendChromeFocusState(tabId, focused) {
+  if (!tabId) return;
+  chrome.tabs.sendMessage(tabId, { type: CHROME_FOCUS_MESSAGE, focused }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+function notifyActiveTabChromeFocus(focused) {
+  if (activeTabId) {
+    sendChromeFocusState(activeTabId, focused);
+    return;
+  }
+
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+    if (chrome.runtime.lastError) return;
+    const tabId = tabs[0]?.id;
+    if (tabId) sendChromeFocusState(tabId, focused);
   });
 }
 
@@ -55,11 +76,17 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    notifyActiveTabChromeFocus(false);
+    return;
+  }
   chrome.tabs.query({ active: true, windowId }, (tabs) => {
     if (chrome.runtime.lastError) return;
     const tabId = tabs[0]?.id;
-    if (tabId) activateTab(tabId);
+    if (tabId) {
+      activateTab(tabId);
+      sendChromeFocusState(tabId, true);
+    }
   });
 });
 

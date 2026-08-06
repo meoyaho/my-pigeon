@@ -9,6 +9,7 @@
   const ACTOR_STORAGE_KEY = 'myPigeonActorState';
   const READY_MESSAGE = 'myPigeon:documentReady';
   const ACTIVE_MESSAGE = 'myPigeon:setActive';
+  const CHROME_FOCUS_MESSAGE = 'myPigeon:chromeFocusChanged';
   const MAX_TEMPORARY_PIGEONS = 8;
 
   const CONFIG = {
@@ -16,11 +17,24 @@
     restDurationMs: 5 * 60 * 1000,
     idleDurationMs: 25 * 60 * 1000,
     weirdBehaviorIntervalMs: 15000,
-    focusBehaviorIntervalMs: 4 * 60 * 1000,
+    focusBehaviorMinIntervalMs: 5 * 60 * 1000,
+    focusBehaviorMaxIntervalMs: 8 * 60 * 1000,
+    focusBehaviorLimit: 3,
+    focusWanderMinDelayMs: 10 * 60 * 1000,
+    focusWanderMaxDelayMs: 18 * 60 * 1000,
+    focusWanderMinOffsetPx: 24,
+    focusWanderMaxOffsetPx: 60,
+    focusStartleDelayMs: 650,
     weirdBehaviorDurationMs: 2500,
     focusDozeDurationMs: 45000,
     oneLegDozeDurationMs: 5 * 60 * 1000,
-    restMoveIntervalMs: 5500,
+    restInitialPauseMs: 4800,
+    restMoveDelayMinMs: 900,
+    restMoveDelayMaxMs: 2200,
+    restPauseBeforeWeirdMinMs: 900,
+    restPauseBeforeWeirdMaxMs: 2400,
+    restCornerVisitProbability: 0.22,
+    restWanderMinDistancePx: 90,
     walkSpeed: 0.06,
     flightSpeed: 0.35,
     hopSpeed: 0.06,
@@ -32,6 +46,7 @@
     feedGatherMinRadius: 66,
     feedGatherMaxRadius: 130,
     restBubbleDurationMs: 4200,
+    focusNoticeBubbleDurationMs: 2200,
     actorSyncIntervalMs: 800,
     scatterVelocityPxPerMs: 1.3,
   };
@@ -65,6 +80,13 @@
   };
 
   const WEIRD_BEHAVIORS = ['flipOver', 'oneLegDoze', 'courtshipCoo'];
+  const REST_WEIRD_BEHAVIORS = ['hopInPlace', 'flipOver', 'courtshipCoo', 'oneLegDoze'];
+
+  const FOCUS_WEIRD_BEHAVIORS = [
+    { mode: 'oneLegDoze', weight: 65 },
+    { mode: 'courtshipCoo', weight: 25 },
+    { mode: 'flipOver', weight: 10 },
+  ];
 
   const WEIRD_BEHAVIOR_SEQUENCES = {
     flipOver: {
@@ -101,6 +123,14 @@ const REST_NOTICE_MESSAGES = [
   '25분 끝! 잠시 휴식하겠습니다!',
   '25분 끝! 허락해주시면 밥 먹고 오겠습니다!',
   '25분 끝! 조금 돌다 오겠습니다!',
+];
+
+const FOCUS_NOTICE_MESSAGES = [
+  '다시 집중하겠습니다!',
+  '자리로 돌아가겠습니다!',
+  '이제 조용히 있겠습니다!',
+  '다시 25분 시작입니다!',
+  '한번 더 화이팅입니다!',
 ];
 
   const state = {
@@ -143,6 +173,8 @@ const REST_NOTICE_MESSAGES = [
       completedAt: 0,
       restNoticeId: 0,
       restUntil: 0,
+      focusWanderAt: 0,
+      focusWandered: false,
     },
     mouse: {
       x: 0,
@@ -165,6 +197,28 @@ const REST_NOTICE_MESSAGES = [
 
   function pick(items) {
     return items[Math.floor(Math.random() * items.length) % items.length];
+  }
+
+  function randomBetween(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function pickWeighted(items) {
+    const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+    let cursor = Math.random() * totalWeight;
+    for (const item of items) {
+      cursor -= item.weight;
+      if (cursor <= 0) return item.mode;
+    }
+    return items[items.length - 1].mode;
+  }
+
+  function nextFocusBehaviorDelayMs() {
+    return randomBetween(CONFIG.focusBehaviorMinIntervalMs, CONFIG.focusBehaviorMaxIntervalMs);
+  }
+
+  function nextFocusWanderAt(startedAt = studyNow()) {
+    return startedAt + Math.floor(randomBetween(CONFIG.focusWanderMinDelayMs, CONFIG.focusWanderMaxDelayMs));
   }
 
   function formatRemaining(ms) {
@@ -192,6 +246,8 @@ const REST_NOTICE_MESSAGES = [
       completedAt: normalizeTimestamp(raw.completedAt),
       restNoticeId: normalizeTimestamp(raw.restNoticeId),
       restUntil: normalizeTimestamp(raw.restUntil),
+      focusWanderAt: normalizeTimestamp(raw.focusWanderAt),
+      focusWandered: Boolean(raw.focusWandered),
     };
     if (session.rewardAvailable && !session.restUntil && session.completedAt) {
       session.restUntil = session.completedAt + CONFIG.restDurationMs;
@@ -216,6 +272,8 @@ const REST_NOTICE_MESSAGES = [
       completedAt: 0,
       restNoticeId: 0,
       restUntil: 0,
+      focusWanderAt: 0,
+      focusWandered: false,
     });
   }
 
@@ -279,6 +337,10 @@ const REST_NOTICE_MESSAGES = [
       onArrive: null,
       stateElapsedMs: 0,
       weirdBehaviorTimerMs: 0,
+      focusBehaviorDelayMs: 0,
+      focusBehaviorCount: 0,
+      restBehaviorStage: '',
+      restActionDelayMs: 0,
       drag: null,
     };
     state.nextActorId += 1;
@@ -375,6 +437,60 @@ const REST_NOTICE_MESSAGES = [
   function isAtCorner(actor = state.main) {
     const nearest = pickNearestCorner(actor);
     return Math.hypot(nearest.x - actor.x, nearest.y - actor.y) <= CONFIG.cornerArrivalThreshold;
+  }
+
+  function pickFocusWanderTarget(actor = state.main) {
+    const margin = getMargins(actor);
+    const cornerIndex = nearestCornerIndex(actor);
+    const isRightCorner = cornerIndex === 1 || cornerIndex === 3;
+    const isBottomCorner = cornerIndex === 2 || cornerIndex === 3;
+    const xOffset = randomBetween(CONFIG.focusWanderMinOffsetPx, CONFIG.focusWanderMaxOffsetPx);
+    const yOffset = randomBetween(CONFIG.focusWanderMinOffsetPx * 0.4, CONFIG.focusWanderMaxOffsetPx * 0.65);
+
+    return clampCenter({
+      x: isRightCorner ? window.innerWidth - margin.x - xOffset : margin.x + xOffset,
+      y: isBottomCorner ? window.innerHeight - margin.y - yOffset : margin.y + yOffset,
+    }, actor);
+  }
+
+  function nextRestMoveDelayMs() {
+    return randomBetween(CONFIG.restMoveDelayMinMs, CONFIG.restMoveDelayMaxMs);
+  }
+
+  function nextRestPauseBeforeWeirdMs() {
+    return randomBetween(CONFIG.restPauseBeforeWeirdMinMs, CONFIG.restPauseBeforeWeirdMaxMs);
+  }
+
+  function setRestBehavior(actor, stage, delayMs) {
+    if (!actor) return;
+    actor.restBehaviorStage = stage;
+    actor.restActionDelayMs = Math.max(0, delayMs);
+  }
+
+  function clearRestBehavior(actor) {
+    if (!actor) return;
+    actor.restBehaviorStage = '';
+    actor.restActionDelayMs = 0;
+  }
+
+  function pickRestWanderTarget(actor = state.main) {
+    if (Math.random() < CONFIG.restCornerVisitProbability && !isAtCorner(actor)) {
+      return pickWalkTarget(actor);
+    }
+
+    const minDistance = Math.min(CONFIG.restWanderMinDistancePx, Math.max(window.innerWidth, window.innerHeight) * 0.12);
+    for (let index = 0; index < 6; index += 1) {
+      const target = clampCenter({
+        x: randomBetween(window.innerWidth * 0.24, window.innerWidth * 0.76),
+        y: randomBetween(window.innerHeight * 0.22, window.innerHeight * 0.78),
+      }, actor);
+      if (Math.hypot(target.x - actor.x, target.y - actor.y) >= minDistance) return target;
+    }
+
+    return clampCenter({
+      x: window.innerWidth - actor.x,
+      y: window.innerHeight - actor.y,
+    }, actor);
   }
 
   function modeFacesRightNatively(mode) {
@@ -512,6 +628,8 @@ const REST_NOTICE_MESSAGES = [
         speedPxPerMs: Number.isFinite(actor.speedPxPerMs) ? actor.speedPxPerMs : 0,
         stateElapsedMs: Math.max(0, Math.floor(actor.stateElapsedMs || 0)),
         weirdBehaviorTimerMs: Math.max(0, Math.floor(actor.weirdBehaviorTimerMs || 0)),
+        focusBehaviorDelayMs: Math.max(0, Math.floor(actor.focusBehaviorDelayMs || 0)),
+        focusBehaviorCount: Math.max(0, Math.floor(actor.focusBehaviorCount || 0)),
         savedAt: Date.now(),
       },
     });
@@ -536,6 +654,8 @@ const REST_NOTICE_MESSAGES = [
     actor.frameIndex = Math.max(0, Math.floor(Number(value.frameIndex) || 0));
     actor.stateElapsedMs = Math.max(0, Math.floor(Number(value.stateElapsedMs) || 0));
     actor.weirdBehaviorTimerMs = Math.max(0, Math.floor(Number(value.weirdBehaviorTimerMs) || 0));
+    actor.focusBehaviorDelayMs = Math.max(0, Math.floor(Number(value.focusBehaviorDelayMs) || 0));
+    actor.focusBehaviorCount = Math.max(0, Math.floor(Number(value.focusBehaviorCount) || 0));
 
     if (value.target && (mode === 'walk' || mode === 'hopInPlace' || mode === 'flyIn' || mode === 'flyOut')) {
       const target = clampCenter(pointFromRatios(value.target), actor);
@@ -595,6 +715,8 @@ const REST_NOTICE_MESSAGES = [
         completedAt,
         restNoticeId: completedAt,
         restUntil: completedAt + CONFIG.restDurationMs,
+        focusWanderAt: 0,
+        focusWandered: true,
       });
     }
 
@@ -607,6 +729,8 @@ const REST_NOTICE_MESSAGES = [
         completedAt: 0,
         restNoticeId: 0,
         restUntil: 0,
+        focusWanderAt: 0,
+        focusWandered: false,
       });
     }
     updateFeedMenu();
@@ -628,6 +752,9 @@ const REST_NOTICE_MESSAGES = [
     if (state.main) {
       state.main.stateElapsedMs = 0;
       state.main.weirdBehaviorTimerMs = 0;
+      state.main.focusBehaviorDelayMs = nextFocusBehaviorDelayMs();
+      state.main.focusBehaviorCount = 0;
+      clearRestBehavior(state.main);
     }
     persistStudySession({
       startedAt: now,
@@ -637,6 +764,8 @@ const REST_NOTICE_MESSAGES = [
       completedAt: 0,
       restNoticeId: 0,
       restUntil: 0,
+      focusWanderAt: nextFocusWanderAt(now),
+      focusWandered: false,
     });
     updateFeedMenu(now);
   }
@@ -682,6 +811,7 @@ const REST_NOTICE_MESSAGES = [
       enterIdle(actor, now);
       actor.stateElapsedMs = 0;
       actor.weirdBehaviorTimerMs = 0;
+      setRestBehavior(actor, 'move', CONFIG.restInitialPauseMs);
       showBubble(pick(REST_NOTICE_MESSAGES), CONFIG.restBubbleDurationMs);
     };
 
@@ -712,6 +842,8 @@ const REST_NOTICE_MESSAGES = [
       completedAt: now,
       restNoticeId: now,
       restUntil: now + CONFIG.restDurationMs,
+      focusWanderAt: 0,
+      focusWandered: true,
     });
 
     if (options.showRestNotice !== false) showRestNotice();
@@ -812,6 +944,29 @@ const REST_NOTICE_MESSAGES = [
     });
   }
 
+  function showFocusSetupNotice() {
+    const actor = state.main;
+    if (!actor) return;
+
+    const showNotice = (now = performance.now()) => {
+      if (!state.host || state.phase !== 'focusNotice') return;
+      enterIdle(actor, now);
+      actor.stateElapsedMs = 0;
+      actor.weirdBehaviorTimerMs = 0;
+      showBubble(pick(FOCUS_NOTICE_MESSAGES), CONFIG.focusNoticeBubbleDurationMs);
+      later(() => {
+        if (!state.host || state.phase !== 'focusNotice') return;
+        moveToFocusCorner(actor, { startOnArrive: true });
+      }, CONFIG.focusNoticeBubbleDurationMs);
+    };
+
+    state.phase = 'focusNotice';
+    travelActor(actor, {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    }, 'walk', CONFIG.walkSpeed, showNotice);
+  }
+
   function finishRestPeriod() {
     if (!state.study.rewardAvailable) return;
     if (state.phase !== 'normal' && state.phase !== 'feeding') return;
@@ -820,6 +975,7 @@ const REST_NOTICE_MESSAGES = [
     hideBubble();
     cancelFeedMode();
     clearTemporaryPigeons();
+    clearRestBehavior(state.main);
     persistStudySession({
       startedAt: 0,
       rewardAvailable: false,
@@ -828,8 +984,10 @@ const REST_NOTICE_MESSAGES = [
       completedAt: 0,
       restNoticeId: 0,
       restUntil: 0,
+      focusWanderAt: 0,
+      focusWandered: false,
     });
-    moveToFocusCorner(state.main, { startOnArrive: true });
+    showFocusSetupNotice();
     updateFeedMenu();
   }
 
@@ -839,6 +997,96 @@ const REST_NOTICE_MESSAGES = [
     setMode(actor, behavior, now);
   }
 
+  function isTimedBehavior(actor) {
+    return WEIRD_BEHAVIORS.includes(actor.mode) || (actor.mode === 'hopInPlace' && !actor.target);
+  }
+
+  function ensureRestBehavior(actor) {
+    if (actor.restBehaviorStage) return;
+    setRestBehavior(actor, 'move', nextRestMoveDelayMs());
+  }
+
+  function triggerRestWeirdBehavior(actor, now) {
+    actor.weirdBehaviorTimerMs = 0;
+    setRestBehavior(actor, 'move', nextRestMoveDelayMs());
+    setMode(actor, pick(REST_WEIRD_BEHAVIORS), now);
+  }
+
+  function walkToRestWanderTarget(actor, now) {
+    const target = pickRestWanderTarget(actor);
+    const distance = Math.hypot(target.x - actor.x, target.y - actor.y);
+    actor.weirdBehaviorTimerMs = 0;
+
+    if (distance < 12) {
+      actor.stateElapsedMs = 0;
+      setRestBehavior(actor, 'weird', nextRestPauseBeforeWeirdMs());
+      return;
+    }
+
+    const hopping = Math.random() < CONFIG.hopProbability;
+    travelActor(actor, target, hopping ? 'hopInPlace' : 'walk', hopping ? CONFIG.hopSpeed : CONFIG.walkSpeed, (arriveNow) => {
+      enterIdle(actor, arriveNow);
+      setRestBehavior(actor, 'weird', nextRestPauseBeforeWeirdMs());
+    }, {
+      backwards: Math.random() < CONFIG.backwardsWalkProbability,
+    });
+  }
+
+  function triggerFocusWeirdBehavior(actor, now) {
+    actor.weirdBehaviorTimerMs = 0;
+    actor.focusBehaviorDelayMs = nextFocusBehaviorDelayMs();
+    actor.focusBehaviorCount += 1;
+    setMode(actor, pickWeighted(FOCUS_WEIRD_BEHAVIORS), now);
+  }
+
+  function ensureFocusWanderScheduled() {
+    if (!state.study.startedAt || state.study.rewardAvailable || state.study.focusWandered || state.study.focusWanderAt) return;
+    persistStudySession({ focusWanderAt: nextFocusWanderAt(state.study.startedAt) });
+  }
+
+  function triggerFocusWander(actor, now) {
+    const target = pickFocusWanderTarget(actor);
+    const distance = Math.hypot(target.x - actor.x, target.y - actor.y);
+    persistStudySession({ focusWandered: true });
+    actor.stateElapsedMs = 0;
+    actor.weirdBehaviorTimerMs = 0;
+
+    if (distance < 12) {
+      enterIdle(actor, now);
+      return;
+    }
+
+    travelActor(actor, target, 'walk', CONFIG.walkSpeed, null, {
+      backwards: Math.random() < CONFIG.backwardsWalkProbability,
+    });
+  }
+
+  function triggerFocusStartleFromChromeExit() {
+    const actor = state.main;
+    if (!actor || !state.host || state.offDuty || state.phase !== 'normal') return;
+    if (!isFocusActive() || actor.drag || actor.target || actor.mode === 'startled') return;
+    hideMenu();
+    hideBubble();
+    actor.onArrive = null;
+    actor.allowOffscreen = false;
+    actor.stateElapsedMs = 0;
+    actor.weirdBehaviorTimerMs = 0;
+    setMode(actor, 'startled');
+    applyActorPosition(actor);
+
+    later(() => {
+      if (!state.host || state.main !== actor || actor.drag || actor.target) return;
+      if (!isFocusActive() || state.phase !== 'normal') {
+        enterIdle(actor);
+        return;
+      }
+
+      travelActor(actor, pickWalkTarget(actor), 'flyOut', CONFIG.flightSpeed, (now) => {
+        enterIdle(actor, now);
+      });
+    }, CONFIG.focusStartleDelayMs);
+  }
+
   function updateMainIdleBehavior(deltaMs, now) {
     const actor = state.main;
     if (!actor || state.phase !== 'normal' || actor.target || actor.drag) return;
@@ -846,11 +1094,14 @@ const REST_NOTICE_MESSAGES = [
     actor.stateElapsedMs += deltaMs;
     actor.weirdBehaviorTimerMs += deltaMs;
 
-    if (WEIRD_BEHAVIORS.includes(actor.mode)) {
+    if (isTimedBehavior(actor)) {
       const duration = weirdBehaviorDurationFor(actor.mode);
       if (actor.stateElapsedMs >= duration) {
+        const restActive = isRestActive();
         actor.weirdBehaviorTimerMs = 0;
         enterIdle(actor, now);
+        if (restActive) setRestBehavior(actor, 'move', nextRestMoveDelayMs());
+        else clearRestBehavior(actor);
       }
       return;
     }
@@ -863,27 +1114,35 @@ const REST_NOTICE_MESSAGES = [
     }
 
     if (isFocusActive()) {
+      clearRestBehavior(actor);
       if (!isAtCorner(actor)) {
         moveToFocusCorner(actor);
         return;
       }
-      if (actor.weirdBehaviorTimerMs >= CONFIG.focusBehaviorIntervalMs) {
-        actor.weirdBehaviorTimerMs = 0;
-        setMode(actor, 'oneLegDoze', now);
+      ensureFocusWanderScheduled();
+      if (!state.study.focusWandered && state.study.focusWanderAt && studyNow() >= state.study.focusWanderAt) {
+        triggerFocusWander(actor, now);
+        return;
+      }
+      if (!actor.focusBehaviorDelayMs) actor.focusBehaviorDelayMs = nextFocusBehaviorDelayMs();
+      if (
+        actor.focusBehaviorCount < CONFIG.focusBehaviorLimit
+        && actor.weirdBehaviorTimerMs >= actor.focusBehaviorDelayMs
+      ) {
+        triggerFocusWeirdBehavior(actor, now);
       }
       return;
     }
 
     if (isRestActive()) {
-      if (actor.stateElapsedMs >= CONFIG.restMoveIntervalMs) {
-        walkToRandomCorner(actor);
-        return;
-      }
-      if (actor.weirdBehaviorTimerMs >= CONFIG.weirdBehaviorIntervalMs) {
-        triggerWeirdBehavior(actor, now);
-      }
+      ensureRestBehavior(actor);
+      if (actor.stateElapsedMs < actor.restActionDelayMs) return;
+      if (actor.restBehaviorStage === 'weird') triggerRestWeirdBehavior(actor, now);
+      else walkToRestWanderTarget(actor, now);
       return;
     }
+
+    clearRestBehavior(actor);
 
     if (actor.weirdBehaviorTimerMs >= CONFIG.weirdBehaviorIntervalMs) {
       triggerWeirdBehavior(actor, now);
@@ -1034,7 +1293,7 @@ const REST_NOTICE_MESSAGES = [
     if (state.phase === 'commuteOut' || state.feed.feeding) return;
     hideMenu();
     if (!state.study.rewardAvailable) {
-      showBubble(`먹이까지 ${formatRemaining(studyRemainingMs())}`, 1800);
+      showBubble(`쉬는 시간까지 ${formatRemaining(studyRemainingMs())}`, 1800);
       return;
     }
     hideBubble();
@@ -1159,6 +1418,7 @@ const REST_NOTICE_MESSAGES = [
     updateFrame(actor, false, now);
 
     if (actor.target && !actor.drag) {
+      if (!actor.allowOffscreen) actor.target = clampCenter(actor.target, actor);
       const dx = actor.target.x - actor.x;
       const dy = actor.target.y - actor.y;
       const distance = Math.hypot(dx, dy);
@@ -1193,7 +1453,16 @@ const REST_NOTICE_MESSAGES = [
   }
 
   function onMainPointerDown(event) {
-    if (event.button !== 0 || state.phase === 'commuteOut') return;
+    if (
+      event.button !== 0
+      || state.phase === 'commuteIn'
+      || state.phase === 'commuteOut'
+      || state.phase === 'focusNotice'
+      || state.phase === 'focusSetup'
+      || state.phase === 'restNotice'
+      || state.phase === 'feeding'
+      || state.feed.feeding
+    ) return;
     event.preventDefault();
     event.stopPropagation();
     hideMenu();
@@ -1386,8 +1655,8 @@ const REST_NOTICE_MESSAGES = [
           position: absolute;
           left: 0;
           top: 0;
-          width: clamp(208px, 28.6vmin, 312px);
-          height: clamp(145.6px, 23.4vmin, 218.4px);
+          width: clamp(249.6px, 34.32vmin, 374.4px);
+          height: clamp(174.72px, 28.08vmin, 262.08px);
           pointer-events: none;
           user-select: none;
           touch-action: none;
@@ -1603,6 +1872,8 @@ const REST_NOTICE_MESSAGES = [
       completedAt: 0,
       restNoticeId: 0,
       restUntil: 0,
+      focusWanderAt: 0,
+      focusWandered: false,
     };
   }
 
@@ -1739,6 +2010,9 @@ const REST_NOTICE_MESSAGES = [
   if (runtime?.onMessage) {
     runtime.onMessage.addListener((message) => {
       if (message?.type === ACTIVE_MESSAGE) applyActiveSurface(message.active === true);
+      if (message?.type === CHROME_FOCUS_MESSAGE && message.focused === false) {
+        triggerFocusStartleFromChromeExit();
+      }
     });
   }
 

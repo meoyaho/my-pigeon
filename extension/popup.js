@@ -20,6 +20,8 @@ function emptyStudySession() {
     completedAt: 0,
     restNoticeId: 0,
     restUntil: 0,
+    focusWanderAt: 0,
+    focusWandered: false,
   };
 }
 
