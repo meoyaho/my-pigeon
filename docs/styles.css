@@ -48,7 +48,6 @@ body {
   text-decoration: none;
   color: var(--ink);
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .pigeon-download:focus-visible {

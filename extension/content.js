@@ -17,11 +17,12 @@
     restDurationMs: 5 * 60 * 1000,
     idleDurationMs: 25 * 60 * 1000,
     weirdBehaviorIntervalMs: 15000,
-    focusBehaviorMinIntervalMs: 5 * 60 * 1000,
-    focusBehaviorMaxIntervalMs: 8 * 60 * 1000,
-    focusBehaviorLimit: 3,
-    focusWanderMinDelayMs: 10 * 60 * 1000,
-    focusWanderMaxDelayMs: 18 * 60 * 1000,
+    focusBehaviorMinIntervalMs: 2.5 * 60 * 1000,
+    focusBehaviorMaxIntervalMs: 4 * 60 * 1000,
+    focusBehaviorLimit: 6,
+    focusWanderMinDelayMs: 5 * 60 * 1000,
+    focusWanderMaxDelayMs: 8 * 60 * 1000,
+    focusWanderLimit: 3,
     focusWanderMinOffsetPx: 24,
     focusWanderMaxOffsetPx: 60,
     focusStartleDelayMs: 650,
@@ -57,7 +58,7 @@
     hopInPlace: ['idle_01.png', 'hopInPlace_01.png'],
     headTilt: ['headTilt_01.png', 'headTilt_02.png'],
     preenFeather: ['preenFeather_01.png', 'preenFeather_02.png'],
-    lookAround: ['lookAround_01.png'],
+    lookAround: ['idle_01.png', 'lookAround_01.png'],
     flutWing: ['idle_01.png', 'flutWing_01.png', 'idle_01.png'],
     featherOnHead: ['featherOnHead_01.png'],
     flipOver: ['flipOver_01.png', 'flipOver_02.png', 'flipOver_03.png'],
@@ -74,14 +75,14 @@
     idle: 620,
     walk: 190,
     hopInPlace: 170,
-    headTilt: 360,
-    preenFeather: 320,
-    lookAround: 520,
-    flutWing: 120,
-    featherOnHead: 520,
-    flipOver: 220,
+    headTilt: 560,
+    preenFeather: 520,
+    lookAround: 720,
+    flutWing: 520,
+    featherOnHead: 720,
+    flipOver: 520,
     oneLegDoze: 900,
-    courtshipCoo: 240,
+    courtshipCoo: 520,
     startled: 400,
     dragged: 400,
     flyIn: 120,
@@ -92,11 +93,11 @@
   const WEIRD_BEHAVIORS = ['flipOver', 'oneLegDoze', 'courtshipCoo'];
 
   const FOCUS_WEIRD_BEHAVIORS = [
-    { mode: 'oneLegDoze', weight: 46 },
-    { mode: 'headTilt', weight: 18 },
+    { mode: 'oneLegDoze', weight: 35 },
+    { mode: 'headTilt', weight: 22 },
+    { mode: 'lookAround', weight: 18 },
     { mode: 'preenFeather', weight: 15 },
-    { mode: 'lookAround', weight: 13 },
-    { mode: 'flutWing', weight: 8 },
+    { mode: 'flutWing', weight: 10 },
   ];
 
   const REST_WEIRD_BEHAVIORS = [
@@ -108,8 +109,6 @@
     'courtshipCoo',
     'featherOnHead',
   ];
-
-  const REST_EXAGGERATED_BEHAVIORS = ['headTilt', 'preenFeather', 'lookAround', 'flutWing'];
 
   const TIMED_BEHAVIORS = [
     ...new Set([
@@ -205,6 +204,7 @@ const FOCUS_NOTICE_MESSAGES = [
       restNoticeId: 0,
       restUntil: 0,
       focusWanderAt: 0,
+      focusWanderCount: 0,
       focusWandered: false,
     },
     mouse: {
@@ -269,6 +269,13 @@ const FOCUS_NOTICE_MESSAGES = [
 
   function normalizeStudySession(value = {}) {
     const raw = value && typeof value === 'object' ? value : {};
+    const rawFocusWanderCount = Number(raw.focusWanderCount);
+    const hasFocusWanderCount = Number.isFinite(rawFocusWanderCount);
+    const focusWanderCount = Math.min(
+      CONFIG.focusWanderLimit,
+      Math.max(0, Math.floor(hasFocusWanderCount ? rawFocusWanderCount : (raw.focusWandered ? 1 : 0))),
+    );
+    const legacyCompletedWander = !hasFocusWanderCount && Boolean(raw.focusWandered);
     const session = {
       startedAt: normalizeTimestamp(raw.startedAt),
       rewardAvailable: Boolean(raw.rewardAvailable),
@@ -277,8 +284,9 @@ const FOCUS_NOTICE_MESSAGES = [
       completedAt: normalizeTimestamp(raw.completedAt),
       restNoticeId: normalizeTimestamp(raw.restNoticeId),
       restUntil: normalizeTimestamp(raw.restUntil),
-      focusWanderAt: normalizeTimestamp(raw.focusWanderAt),
-      focusWandered: Boolean(raw.focusWandered),
+      focusWanderAt: focusWanderCount >= CONFIG.focusWanderLimit || legacyCompletedWander ? 0 : normalizeTimestamp(raw.focusWanderAt),
+      focusWanderCount,
+      focusWandered: focusWanderCount >= CONFIG.focusWanderLimit,
     };
     if (session.rewardAvailable && !session.restUntil && session.completedAt) {
       session.restUntil = session.completedAt + CONFIG.restDurationMs;
@@ -304,6 +312,7 @@ const FOCUS_NOTICE_MESSAGES = [
       restNoticeId: 0,
       restUntil: 0,
       focusWanderAt: 0,
+      focusWanderCount: 0,
       focusWandered: false,
     });
   }
@@ -372,7 +381,6 @@ const FOCUS_NOTICE_MESSAGES = [
       focusBehaviorCount: 0,
       restBehaviorStage: '',
       restActionDelayMs: 0,
-      restExaggerated: false,
       drag: null,
     };
     state.nextActorId += 1;
@@ -534,12 +542,6 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.el.style.setProperty('--pigeon-direction', String(scaleX));
   }
 
-  function setRestExaggeration(actor, active) {
-    if (!actor?.el) return;
-    actor.restExaggerated = Boolean(active);
-    actor.el.classList.toggle('rest-exaggerated', actor.restExaggerated);
-  }
-
   function faceTravelDirection(actor, directionX, mode, options = {}) {
     if (directionX) {
       const travelFacingRight = directionX > 0;
@@ -560,11 +562,12 @@ const FOCUS_NOTICE_MESSAGES = [
   }
 
   function weirdBehaviorDurationFor(mode) {
-    if (mode === 'flutWing') return 1200;
-    if (mode === 'lookAround') return 2200;
-    if (mode === 'headTilt') return 2600;
-    if (mode === 'preenFeather') return 3200;
-    if (mode === 'featherOnHead') return 2600;
+    if (mode === 'flutWing') return 2400;
+    if (mode === 'lookAround') return 3400;
+    if (mode === 'headTilt') return 3600;
+    if (mode === 'preenFeather') return 4200;
+    if (mode === 'featherOnHead') return 3600;
+    if (mode === 'flipOver' || mode === 'courtshipCoo') return 4600;
     if (mode === 'oneLegDoze') {
       if (isRestActive()) return CONFIG.weirdBehaviorDurationMs;
       return isFocusActive() ? CONFIG.focusDozeDurationMs : CONFIG.oneLegDozeDurationMs;
@@ -760,6 +763,7 @@ const FOCUS_NOTICE_MESSAGES = [
         restNoticeId: completedAt,
         restUntil: completedAt + CONFIG.restDurationMs,
         focusWanderAt: 0,
+        focusWanderCount: CONFIG.focusWanderLimit,
         focusWandered: true,
       });
     }
@@ -774,6 +778,7 @@ const FOCUS_NOTICE_MESSAGES = [
         restNoticeId: 0,
         restUntil: 0,
         focusWanderAt: 0,
+        focusWanderCount: 0,
         focusWandered: false,
       });
     }
@@ -809,6 +814,7 @@ const FOCUS_NOTICE_MESSAGES = [
       restNoticeId: 0,
       restUntil: 0,
       focusWanderAt: nextFocusWanderAt(now),
+      focusWanderCount: 0,
       focusWandered: false,
     });
     updateFeedMenu(now);
@@ -887,6 +893,7 @@ const FOCUS_NOTICE_MESSAGES = [
       restNoticeId: now,
       restUntil: now + CONFIG.restDurationMs,
       focusWanderAt: 0,
+      focusWanderCount: CONFIG.focusWanderLimit,
       focusWandered: true,
     });
 
@@ -914,7 +921,6 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.speedPxPerMs = speedPxPerMs;
     actor.onArrive = onArrive;
     actor.allowOffscreen = Boolean(options.allowOffscreen);
-    setRestExaggeration(actor, false);
     faceTravelDirection(actor, resolvedTarget.x - actor.x, mode, options);
     setMode(actor, mode);
   }
@@ -930,7 +936,6 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.target = null;
     actor.onArrive = null;
     actor.allowOffscreen = false;
-    setRestExaggeration(actor, false);
     setMode(actor, 'idle', now);
     applyActorPosition(actor);
   }
@@ -1031,6 +1036,7 @@ const FOCUS_NOTICE_MESSAGES = [
       restNoticeId: 0,
       restUntil: 0,
       focusWanderAt: 0,
+      focusWanderCount: 0,
       focusWandered: false,
     });
     showFocusSetupNotice();
@@ -1040,7 +1046,6 @@ const FOCUS_NOTICE_MESSAGES = [
   function triggerWeirdBehavior(actor, now) {
     const behavior = pick(WEIRD_BEHAVIORS);
     actor.weirdBehaviorTimerMs = 0;
-    setRestExaggeration(actor, false);
     setMode(actor, behavior, now);
   }
 
@@ -1057,7 +1062,6 @@ const FOCUS_NOTICE_MESSAGES = [
     const behavior = pick(REST_WEIRD_BEHAVIORS);
     actor.weirdBehaviorTimerMs = 0;
     setRestBehavior(actor, 'move', nextRestMoveDelayMs());
-    setRestExaggeration(actor, REST_EXAGGERATED_BEHAVIORS.includes(behavior));
     setMode(actor, behavior, now);
   }
 
@@ -1086,21 +1090,29 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.weirdBehaviorTimerMs = 0;
     actor.focusBehaviorDelayMs = nextFocusBehaviorDelayMs();
     actor.focusBehaviorCount += 1;
-    setRestExaggeration(actor, false);
     setMode(actor, behavior, now);
   }
 
   function ensureFocusWanderScheduled() {
-    if (!state.study.startedAt || state.study.rewardAvailable || state.study.focusWandered || state.study.focusWanderAt) return;
-    persistStudySession({ focusWanderAt: nextFocusWanderAt(state.study.startedAt) });
+    if (
+      !state.study.startedAt
+      || state.study.rewardAvailable
+      || state.study.focusWanderCount >= CONFIG.focusWanderLimit
+      || state.study.focusWanderAt
+    ) return;
+    persistStudySession({ focusWanderAt: nextFocusWanderAt(studyNow()), focusWandered: false });
   }
 
   function triggerFocusWander(actor, now) {
     const target = pickFocusWanderTarget(actor);
     const distance = Math.hypot(target.x - actor.x, target.y - actor.y);
-    persistStudySession({ focusWandered: true });
+    const focusWanderCount = Math.min(CONFIG.focusWanderLimit, state.study.focusWanderCount + 1);
+    persistStudySession({
+      focusWanderAt: focusWanderCount >= CONFIG.focusWanderLimit ? 0 : nextFocusWanderAt(studyNow()),
+      focusWanderCount,
+      focusWandered: focusWanderCount >= CONFIG.focusWanderLimit,
+    });
     actor.stateElapsedMs = 0;
-    actor.weirdBehaviorTimerMs = 0;
 
     if (distance < 12) {
       enterIdle(actor, now);
@@ -1121,7 +1133,6 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.onArrive = null;
     actor.allowOffscreen = false;
     actor.stateElapsedMs = 0;
-    actor.weirdBehaviorTimerMs = 0;
     setMode(actor, 'startled');
     applyActorPosition(actor);
 
@@ -1171,7 +1182,11 @@ const FOCUS_NOTICE_MESSAGES = [
         return;
       }
       ensureFocusWanderScheduled();
-      if (!state.study.focusWandered && state.study.focusWanderAt && studyNow() >= state.study.focusWanderAt) {
+      if (
+        state.study.focusWanderCount < CONFIG.focusWanderLimit
+        && state.study.focusWanderAt
+        && studyNow() >= state.study.focusWanderAt
+      ) {
         triggerFocusWander(actor, now);
         return;
       }
@@ -1530,7 +1545,6 @@ const FOCUS_NOTICE_MESSAGES = [
     };
     actor.target = null;
     actor.onArrive = null;
-    setRestExaggeration(actor, false);
     setMode(actor, 'dragged');
     actor.el.classList.add('dragging');
   }
@@ -1736,52 +1750,11 @@ const FOCUS_NOTICE_MESSAGES = [
           transform: scaleX(var(--pigeon-direction));
           transform-origin: center bottom;
           filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.18));
-          -webkit-user-drag: none;
         }
 
-        .pigeon-wrap.rest-exaggerated[data-mode="headTilt"] .pigeon-img {
-          animation: my-pigeon-rest-head-tilt 760ms ease-in-out infinite;
-          transform-origin: 44% 82%;
-        }
-
-        .pigeon-wrap.rest-exaggerated[data-mode="preenFeather"] .pigeon-img {
-          animation: my-pigeon-rest-preen 920ms ease-in-out infinite;
-          transform-origin: 48% 88%;
-        }
-
-        .pigeon-wrap.rest-exaggerated[data-mode="lookAround"] .pigeon-img {
-          animation: my-pigeon-rest-look-around 840ms ease-in-out infinite;
-          transform-origin: 50% 86%;
-        }
-
-        .pigeon-wrap.rest-exaggerated[data-mode="flutWing"] .pigeon-img {
-          animation: my-pigeon-rest-flut-wing 260ms ease-in-out infinite;
-          transform-origin: 50% 92%;
-        }
-
-        @keyframes my-pigeon-rest-head-tilt {
-          0%, 100% { transform: scaleX(var(--pigeon-direction)) rotate(-7deg) translateY(1px); }
-          48% { transform: scaleX(var(--pigeon-direction)) rotate(12deg) translateY(-6px); }
-          72% { transform: scaleX(var(--pigeon-direction)) rotate(5deg) translateY(-2px); }
-        }
-
-        @keyframes my-pigeon-rest-preen {
-          0%, 100% { transform: scaleX(var(--pigeon-direction)) rotate(0deg) translateY(0) scale(1); }
-          38% { transform: scaleX(var(--pigeon-direction)) rotate(5deg) translateY(7px) scale(1.035); }
-          68% { transform: scaleX(var(--pigeon-direction)) rotate(-3deg) translateY(2px) scale(1.015); }
-        }
-
-        @keyframes my-pigeon-rest-look-around {
-          0%, 100% { transform: scaleX(var(--pigeon-direction)) translateX(-5px) rotate(-3deg); }
-          46% { transform: scaleX(var(--pigeon-direction)) translateX(8px) rotate(5deg); }
-          70% { transform: scaleX(var(--pigeon-direction)) translateX(2px) rotate(1deg) scale(1.025); }
-        }
-
-        @keyframes my-pigeon-rest-flut-wing {
-          0%, 100% { transform: scaleX(var(--pigeon-direction)) translateY(0) rotate(0deg) scale(1); }
-          25% { transform: scaleX(var(--pigeon-direction)) translateY(-8px) rotate(-4deg) scale(1.03); }
-          55% { transform: scaleX(var(--pigeon-direction)) translateY(4px) rotate(4deg) scale(0.99); }
-          78% { transform: scaleX(var(--pigeon-direction)) translateY(-5px) rotate(-2deg) scale(1.02); }
+        .pigeon-wrap[data-mode="featherOnHead"] .pigeon-img {
+          transform: scaleX(var(--pigeon-direction)) scale(1.5);
+          transform-origin: center bottom;
         }
 
         .bubble {
@@ -1970,6 +1943,7 @@ const FOCUS_NOTICE_MESSAGES = [
       restNoticeId: 0,
       restUntil: 0,
       focusWanderAt: 0,
+      focusWanderCount: 0,
       focusWandered: false,
     };
   }
