@@ -54,7 +54,12 @@
   const SPRITES = {
     idle: ['idle_01.png', 'idle_02.png'],
     walk: ['walk_01.png', 'walk_02.png'],
-    hopInPlace: ['idle_01.png', 'hopInPlace.png'],
+    hopInPlace: ['idle_01.png', 'hopInPlace_01.png'],
+    headTilt: ['headTilt_01.png', 'headTilt_02.png'],
+    preenFeather: ['preenFeather_01.png', 'preenFeather_02.png'],
+    lookAround: ['lookAround_01.png'],
+    flutWing: ['idle_01.png', 'flutWing_01.png', 'idle_01.png'],
+    featherOnHead: ['featherOnHead_01.png'],
     flipOver: ['flipOver_01.png', 'flipOver_02.png', 'flipOver_03.png'],
     oneLegDoze: ['oneLegDoze_01.png', 'oneLegDoze_02.png'],
     courtshipCoo: ['courtshipCoo_01.png', 'courtshipCoo_02.png', 'courtshipCoo_03.png'],
@@ -69,6 +74,11 @@
     idle: 620,
     walk: 190,
     hopInPlace: 170,
+    headTilt: 360,
+    preenFeather: 320,
+    lookAround: 520,
+    flutWing: 120,
+    featherOnHead: 520,
     flipOver: 220,
     oneLegDoze: 900,
     courtshipCoo: 240,
@@ -80,12 +90,33 @@
   };
 
   const WEIRD_BEHAVIORS = ['flipOver', 'oneLegDoze', 'courtshipCoo'];
-  const REST_WEIRD_BEHAVIORS = ['hopInPlace', 'flipOver', 'courtshipCoo', 'oneLegDoze'];
 
   const FOCUS_WEIRD_BEHAVIORS = [
-    { mode: 'oneLegDoze', weight: 65 },
-    { mode: 'courtshipCoo', weight: 25 },
-    { mode: 'flipOver', weight: 10 },
+    { mode: 'oneLegDoze', weight: 46 },
+    { mode: 'headTilt', weight: 18 },
+    { mode: 'preenFeather', weight: 15 },
+    { mode: 'lookAround', weight: 13 },
+    { mode: 'flutWing', weight: 8 },
+  ];
+
+  const REST_WEIRD_BEHAVIORS = [
+    'headTilt',
+    'preenFeather',
+    'lookAround',
+    'flutWing',
+    'flipOver',
+    'courtshipCoo',
+    'featherOnHead',
+  ];
+
+  const REST_EXAGGERATED_BEHAVIORS = ['headTilt', 'preenFeather', 'lookAround', 'flutWing'];
+
+  const TIMED_BEHAVIORS = [
+    ...new Set([
+      ...WEIRD_BEHAVIORS,
+      ...REST_WEIRD_BEHAVIORS,
+      ...FOCUS_WEIRD_BEHAVIORS.map((item) => item.mode),
+    ]),
   ];
 
   const WEIRD_BEHAVIOR_SEQUENCES = {
@@ -341,6 +372,7 @@ const FOCUS_NOTICE_MESSAGES = [
       focusBehaviorCount: 0,
       restBehaviorStage: '',
       restActionDelayMs: 0,
+      restExaggerated: false,
       drag: null,
     };
     state.nextActorId += 1;
@@ -502,6 +534,12 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.el.style.setProperty('--pigeon-direction', String(scaleX));
   }
 
+  function setRestExaggeration(actor, active) {
+    if (!actor?.el) return;
+    actor.restExaggerated = Boolean(active);
+    actor.el.classList.toggle('rest-exaggerated', actor.restExaggerated);
+  }
+
   function faceTravelDirection(actor, directionX, mode, options = {}) {
     if (directionX) {
       const travelFacingRight = directionX > 0;
@@ -516,11 +554,17 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.frameIndex = 0;
     actor.lastFrameAt = now;
     actor.stateElapsedMs = 0;
+    actor.el.dataset.mode = mode;
     applyFacing(actor, mode);
     updateFrame(actor, true, now);
   }
 
   function weirdBehaviorDurationFor(mode) {
+    if (mode === 'flutWing') return 1200;
+    if (mode === 'lookAround') return 2200;
+    if (mode === 'headTilt') return 2600;
+    if (mode === 'preenFeather') return 3200;
+    if (mode === 'featherOnHead') return 2600;
     if (mode === 'oneLegDoze') {
       if (isRestActive()) return CONFIG.weirdBehaviorDurationMs;
       return isFocusActive() ? CONFIG.focusDozeDurationMs : CONFIG.oneLegDozeDurationMs;
@@ -870,6 +914,7 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.speedPxPerMs = speedPxPerMs;
     actor.onArrive = onArrive;
     actor.allowOffscreen = Boolean(options.allowOffscreen);
+    setRestExaggeration(actor, false);
     faceTravelDirection(actor, resolvedTarget.x - actor.x, mode, options);
     setMode(actor, mode);
   }
@@ -885,6 +930,7 @@ const FOCUS_NOTICE_MESSAGES = [
     actor.target = null;
     actor.onArrive = null;
     actor.allowOffscreen = false;
+    setRestExaggeration(actor, false);
     setMode(actor, 'idle', now);
     applyActorPosition(actor);
   }
@@ -994,11 +1040,12 @@ const FOCUS_NOTICE_MESSAGES = [
   function triggerWeirdBehavior(actor, now) {
     const behavior = pick(WEIRD_BEHAVIORS);
     actor.weirdBehaviorTimerMs = 0;
+    setRestExaggeration(actor, false);
     setMode(actor, behavior, now);
   }
 
   function isTimedBehavior(actor) {
-    return WEIRD_BEHAVIORS.includes(actor.mode) || (actor.mode === 'hopInPlace' && !actor.target);
+    return TIMED_BEHAVIORS.includes(actor.mode) || (actor.mode === 'hopInPlace' && !actor.target);
   }
 
   function ensureRestBehavior(actor) {
@@ -1007,9 +1054,11 @@ const FOCUS_NOTICE_MESSAGES = [
   }
 
   function triggerRestWeirdBehavior(actor, now) {
+    const behavior = pick(REST_WEIRD_BEHAVIORS);
     actor.weirdBehaviorTimerMs = 0;
     setRestBehavior(actor, 'move', nextRestMoveDelayMs());
-    setMode(actor, pick(REST_WEIRD_BEHAVIORS), now);
+    setRestExaggeration(actor, REST_EXAGGERATED_BEHAVIORS.includes(behavior));
+    setMode(actor, behavior, now);
   }
 
   function walkToRestWanderTarget(actor, now) {
@@ -1033,10 +1082,12 @@ const FOCUS_NOTICE_MESSAGES = [
   }
 
   function triggerFocusWeirdBehavior(actor, now) {
+    const behavior = pickWeighted(FOCUS_WEIRD_BEHAVIORS);
     actor.weirdBehaviorTimerMs = 0;
     actor.focusBehaviorDelayMs = nextFocusBehaviorDelayMs();
     actor.focusBehaviorCount += 1;
-    setMode(actor, pickWeighted(FOCUS_WEIRD_BEHAVIORS), now);
+    setRestExaggeration(actor, false);
+    setMode(actor, behavior, now);
   }
 
   function ensureFocusWanderScheduled() {
@@ -1479,6 +1530,7 @@ const FOCUS_NOTICE_MESSAGES = [
     };
     actor.target = null;
     actor.onArrive = null;
+    setRestExaggeration(actor, false);
     setMode(actor, 'dragged');
     actor.el.classList.add('dragging');
   }
@@ -1685,6 +1737,51 @@ const FOCUS_NOTICE_MESSAGES = [
           transform-origin: center bottom;
           filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.18));
           -webkit-user-drag: none;
+        }
+
+        .pigeon-wrap.rest-exaggerated[data-mode="headTilt"] .pigeon-img {
+          animation: my-pigeon-rest-head-tilt 760ms ease-in-out infinite;
+          transform-origin: 44% 82%;
+        }
+
+        .pigeon-wrap.rest-exaggerated[data-mode="preenFeather"] .pigeon-img {
+          animation: my-pigeon-rest-preen 920ms ease-in-out infinite;
+          transform-origin: 48% 88%;
+        }
+
+        .pigeon-wrap.rest-exaggerated[data-mode="lookAround"] .pigeon-img {
+          animation: my-pigeon-rest-look-around 840ms ease-in-out infinite;
+          transform-origin: 50% 86%;
+        }
+
+        .pigeon-wrap.rest-exaggerated[data-mode="flutWing"] .pigeon-img {
+          animation: my-pigeon-rest-flut-wing 260ms ease-in-out infinite;
+          transform-origin: 50% 92%;
+        }
+
+        @keyframes my-pigeon-rest-head-tilt {
+          0%, 100% { transform: scaleX(var(--pigeon-direction)) rotate(-7deg) translateY(1px); }
+          48% { transform: scaleX(var(--pigeon-direction)) rotate(12deg) translateY(-6px); }
+          72% { transform: scaleX(var(--pigeon-direction)) rotate(5deg) translateY(-2px); }
+        }
+
+        @keyframes my-pigeon-rest-preen {
+          0%, 100% { transform: scaleX(var(--pigeon-direction)) rotate(0deg) translateY(0) scale(1); }
+          38% { transform: scaleX(var(--pigeon-direction)) rotate(5deg) translateY(7px) scale(1.035); }
+          68% { transform: scaleX(var(--pigeon-direction)) rotate(-3deg) translateY(2px) scale(1.015); }
+        }
+
+        @keyframes my-pigeon-rest-look-around {
+          0%, 100% { transform: scaleX(var(--pigeon-direction)) translateX(-5px) rotate(-3deg); }
+          46% { transform: scaleX(var(--pigeon-direction)) translateX(8px) rotate(5deg); }
+          70% { transform: scaleX(var(--pigeon-direction)) translateX(2px) rotate(1deg) scale(1.025); }
+        }
+
+        @keyframes my-pigeon-rest-flut-wing {
+          0%, 100% { transform: scaleX(var(--pigeon-direction)) translateY(0) rotate(0deg) scale(1); }
+          25% { transform: scaleX(var(--pigeon-direction)) translateY(-8px) rotate(-4deg) scale(1.03); }
+          55% { transform: scaleX(var(--pigeon-direction)) translateY(4px) rotate(4deg) scale(0.99); }
+          78% { transform: scaleX(var(--pigeon-direction)) translateY(-5px) rotate(-2deg) scale(1.02); }
         }
 
         .bubble {
