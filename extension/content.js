@@ -1034,7 +1034,7 @@ const REST_NOTICE_MESSAGES = [
     if (state.phase === 'commuteOut' || state.feed.feeding) return;
     hideMenu();
     if (!state.study.rewardAvailable) {
-      showBubble(`모이까지 ${formatRemaining(studyRemainingMs())}`, 1800);
+      showBubble(`먹이까지 ${formatRemaining(studyRemainingMs())}`, 1800);
       return;
     }
     hideBubble();
@@ -1529,7 +1529,7 @@ const REST_NOTICE_MESSAGES = [
       </div>
       <nav class="menu" hidden aria-label="My Pigeon menu">
         <button type="button" data-action="feed">
-          <span>모이 주기</span>
+          <span>먹이 주기</span>
           <span class="feed-status" data-feed-status>25:00</span>
         </button>
       </nav>
