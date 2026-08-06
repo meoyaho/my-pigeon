@@ -4,7 +4,7 @@ const ACTOR_STORAGE_KEY = 'myPigeonActorState';
 
 const enabled = document.getElementById('enabled');
 const status = document.getElementById('status');
-const commuteIn = document.getElementById('commute-in');
+const commute = document.getElementById('commute');
 
 const state = {
   enabled: true,
@@ -25,8 +25,8 @@ function emptyStudySession() {
 
 function render() {
   enabled.checked = state.enabled;
-  commuteIn.hidden = !state.offDuty;
-  status.textContent = state.offDuty ? '집에 있음' : '근무 중';
+  commute.textContent = state.offDuty ? '출근' : '퇴근';
+  status.textContent = state.offDuty ? '집에 있음' : (state.enabled ? '근무 중' : '숨겨 둠');
 }
 
 function loadSettings() {
@@ -45,16 +45,21 @@ enabled.addEventListener('change', () => {
   render();
 });
 
-commuteIn.addEventListener('click', () => {
-  state.enabled = true;
-  state.offDuty = false;
-  chrome.storage.sync.set({ enabled: true });
-  chrome.storage.local.remove(ACTOR_STORAGE_KEY, () => {
-    chrome.storage.local.set({
-      [OFF_DUTY_STORAGE_KEY]: false,
-      [STUDY_STORAGE_KEY]: emptyStudySession(),
+commute.addEventListener('click', () => {
+  if (state.offDuty) {
+    state.enabled = true;
+    state.offDuty = false;
+    chrome.storage.sync.set({ enabled: true });
+    chrome.storage.local.remove(ACTOR_STORAGE_KEY, () => {
+      chrome.storage.local.set({
+        [OFF_DUTY_STORAGE_KEY]: false,
+        [STUDY_STORAGE_KEY]: emptyStudySession(),
+      });
     });
-  });
+  } else {
+    state.offDuty = true;
+    chrome.storage.local.set({ [OFF_DUTY_STORAGE_KEY]: true });
+  }
   render();
 });
 

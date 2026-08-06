@@ -79,21 +79,29 @@
     },
   };
 
-  const GREETINGS = [
-    '오늘도 열심히 해보자고',
-    '둥근해 또 떴네',
-    '오늘 하루도 힘내자고',
-    '자, 오늘도 시작해볼까',
-    '나 신경 쓰지 말고 할일 해',
-  ];
+const GREETINGS = [
+  '좋은 아침입니다!',
+  '출근했습니다!',
+  '오늘도 잘 부탁드립니다!',
+  '먼저 와 있었습니다!',
+  '오늘도 열심히 해보겠습니다!',
+];
 
-  const FAREWELLS = [
-    '오늘도 수고했다',
-    '내일 또 만나',
-    '오늘 하루도 끝!',
-    '쉬어, 나는 집 간다',
-    '오늘 몫은 다 했다, 안녕!',
-  ];
+const FAREWELLS = [
+  '먼저 들어가 보겠습니다!',
+  '오늘도 고생 많으셨습니다!',
+  '내일도 잘 부탁드립니다!',
+  '수고 많으셨습니다, 들어가겠습니다!',
+  '그럼 먼저 퇴근하겠습니다!',
+];
+
+const REST_NOTICE_MESSAGES = [
+  '25분 끝! 잠깐 숨 좀 돌리겠습니다!',
+  '25분 끝! 밥 한 번만 부탁드립니다!',
+  '25분 끝! 잠시 휴식하겠습니다!',
+  '25분 끝! 허락해주시면 밥 먹고 오겠습니다!',
+  '25분 끝! 조금 돌다 오겠습니다!',
+];
 
   const state = {
     host: null,
@@ -674,7 +682,7 @@
       enterIdle(actor, now);
       actor.stateElapsedMs = 0;
       actor.weirdBehaviorTimerMs = 0;
-      showBubble('25분 끝! 먹이 줘!', CONFIG.restBubbleDurationMs);
+      showBubble(pick(REST_NOTICE_MESSAGES), CONFIG.restBubbleDurationMs);
     };
 
     if (state.phase !== 'normal' || actor.drag) {
@@ -937,7 +945,7 @@
     }, { allowOffscreen: true });
   }
 
-  function startCommuteOut() {
+  function startCommuteOut(options = {}) {
     const actor = state.main;
     if (!actor || state.phase === 'commuteOut') return;
     hideMenu();
@@ -948,7 +956,7 @@
     state.phase = 'commuteOut';
     state.remountAfterCommuteOut = false;
     state.offDuty = true;
-    if (storage?.local) storage.local.set({ [OFF_DUTY_STORAGE_KEY]: true });
+    if (storage?.local && options.persist !== false) storage.local.set({ [OFF_DUTY_STORAGE_KEY]: true });
 
     const center = {
       x: window.innerWidth / 2,
@@ -1026,7 +1034,7 @@
     if (state.phase === 'commuteOut' || state.feed.feeding) return;
     hideMenu();
     if (!state.study.rewardAvailable) {
-      showBubble(`먹이까지 ${formatRemaining(studyRemainingMs())}`, 1800);
+      showBubble(`모이까지 ${formatRemaining(studyRemainingMs())}`, 1800);
       return;
     }
     hideBubble();
@@ -1266,7 +1274,6 @@
     event.preventDefault();
     event.stopPropagation();
     if (button.dataset.action === 'feed') startFeedMode(event);
-    if (button.dataset.action === 'commute-out') startCommuteOut();
   }
 
   function onWindowPointerDown(event) {
@@ -1522,10 +1529,9 @@
       </div>
       <nav class="menu" hidden aria-label="My Pigeon menu">
         <button type="button" data-action="feed">
-          <span>먹이 주기</span>
+          <span>모이 주기</span>
           <span class="feed-status" data-feed-status>25:00</span>
         </button>
-        <button type="button" data-action="commute-out">퇴근</button>
       </nav>
     `;
 
@@ -1634,8 +1640,14 @@
   }
 
   function applyOffDuty(offDuty) {
+    const nextOffDuty = offDuty === true;
     const wasOffDuty = state.offDuty;
-    state.offDuty = offDuty === true;
+    if (!wasOffDuty && nextOffDuty && state.main && state.phase !== 'commuteOut') {
+      startCommuteOut({ persist: false });
+      return;
+    }
+
+    state.offDuty = nextOffDuty;
     if (wasOffDuty && !state.offDuty) state.forceCommuteIn = true;
     applyVisibility();
   }
